@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Receipt, CheckCircle2, Circle } from 'lucide-react';
+import { Plus, Receipt, CheckCircle2, Circle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { fetchBills, createBill } from '@/lib/api';
 import { MONTH_SHORT } from '@/types';
 import type { FixedMonthlyBill } from '@/types';
-import { cn } from '@/lib/utils';
+
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'SAR', maximumFractionDigits: 0 }).format(n);
 
@@ -55,7 +55,7 @@ export default function Bills() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Frequency</Label>
-                  <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v })}>
+                  <Select value={form.frequency} onValueChange={(v) => v !== null && setForm({ ...form, frequency: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Monthly">Monthly</SelectItem>

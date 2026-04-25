@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Plus, Search, Trash2, Pencil, Filter } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -110,7 +110,7 @@ export default function Transactions() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Category</Label>
-                  <Select value={formData.category_id} onValueChange={(v) => setFormData({ ...formData, category_id: v })}>
+                  <Select value={formData.category_id} onValueChange={(v) => v !== null && setFormData({ ...formData, category_id: v })}>
                     <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
                       {categories.filter((c) => c.type === formData.type).map((c) => (

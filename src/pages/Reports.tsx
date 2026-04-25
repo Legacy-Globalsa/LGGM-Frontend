@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { fetchTransactions, fetchBudgets } from '@/lib/api';
 import { getMonthName, MONTHS } from '@/types';
@@ -89,7 +88,7 @@ export default function Reports() {
             <SelectItem value="category">By Category</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+        <Select value={selectedMonth} onValueChange={(v) => v !== null && setSelectedMonth(v)}>
           <SelectTrigger className="w-[160px]"><Calendar className="mr-2 h-3.5 w-3.5" /><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="0">All Months</SelectItem>
@@ -114,7 +113,7 @@ export default function Reports() {
               <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
               <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 12 }} />
               <YAxis tick={{ fill: 'currentColor', fontSize: 12 }} />
-              <Tooltip formatter={(val: number) => fmt(val)} />
+              <Tooltip formatter={(val) => fmt(val as number)} />
               <Bar dataKey="income" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               <Bar dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} />
             </BarChart>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  TrendingUp, TrendingDown, PiggyBank, Heart,
-  HandCoins, Sprout, DollarSign, ArrowUpRight,
+  TrendingUp, TrendingDown, PiggyBank,
+  DollarSign, ArrowUpRight,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -114,7 +114,7 @@ export default function Dashboard() {
                 <Tooltip
                   contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                   labelStyle={{ color: 'hsl(var(--foreground))' }}
-                  formatter={(val: number) => fmt(val)}
+                  formatter={(val) => fmt(val as number)}
                 />
                 <Bar dataKey="income" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} />
@@ -136,7 +136,7 @@ export default function Dashboard() {
                     <Cell key={i} fill={d.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(val: number) => fmt(val)} />
+                <Tooltip formatter={(val) => fmt(val as number)} />
               </PieChart>
             </ResponsiveContainer>
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -168,7 +168,7 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
               <XAxis dataKey="name" className="text-xs" tick={{ fill: 'currentColor' }} />
               <YAxis className="text-xs" tick={{ fill: 'currentColor' }} />
-              <Tooltip formatter={(val: number) => fmt(val)} />
+              <Tooltip formatter={(val) => fmt(val as number)} />
               <Area type="monotone" dataKey="surplus" stroke="#8b5cf6" fill="url(#surplusGrad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>

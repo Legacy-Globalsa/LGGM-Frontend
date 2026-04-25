@@ -5,7 +5,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { fetchBudgets, fetchYear } from '@/lib/api';
 import { getStatusColor, getStatusLabel } from '@/mocks/mockBudget';
 import { getMonthName } from '@/types';
