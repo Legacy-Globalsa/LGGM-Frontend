@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { MobileNav } from './MobileNav';
+import { YearFilter } from '@/components/filters/YearFilter';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
@@ -16,10 +17,12 @@ export function AppShell() {
 
       {/* Main content area */}
       <div className={cn('transition-all duration-300', collapsed ? 'md:ml-[68px]' : 'md:ml-[260px]')}>
-        {/* Mobile topbar */}
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border bg-background/80 px-4 backdrop-blur-lg md:hidden">
+        {/* Topbar (mobile + desktop): hosts the global year filter */}
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-lg md:px-6">
           <MobileNav />
-          <span className="text-sm font-bold tracking-tight">LGGM</span>
+          <span className="text-sm font-bold tracking-tight md:hidden">LGGM</span>
+          <div className="flex-1" />
+          <YearFilter />
         </header>
 
         {/* Page content */}

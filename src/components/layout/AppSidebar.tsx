@@ -1,8 +1,6 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, ArrowLeftRight, Scale, Receipt,
-  Landmark, FileBarChart, Settings, LogOut, Sun, Moon,
-  ChevronLeft, ChevronRight, Church,
+  LogOut, Sun, Moon, ChevronLeft, ChevronRight, Church,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -10,17 +8,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
-
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
-  { to: '/budget', icon: Scale, label: 'Budget' },
-  { to: '/bills', icon: Receipt, label: 'Bills' },
-  { to: '/loans', icon: Landmark, label: 'Loans' },
-  { to: '/reports', icon: FileBarChart, label: 'Reports' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-];
+import {
+  navEntries, isGroup, useGroupOpen, GroupHeader, LeafLink,
+} from './nav-config';
 
 interface AppSidebarProps {
   collapsed: boolean;
@@ -31,12 +21,8 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
   const { user, logout } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const navigate = useNavigate();
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
 
   const initials = user?.full_name
     ?.split(' ')
@@ -49,7 +35,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     <aside
       className={cn(
         'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300',
-        collapsed ? 'w-[68px]' : 'w-[260px]'
+        collapsed ? 'w-[68px]' : 'w-[260px]',
       )}
     >
       {/* Logo */}
@@ -69,44 +55,16 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            onMouseEnter={() => setHoveredItem(item.to)}
-            onMouseLeave={() => setHoveredItem(null)}
-            className={({ isActive }) =>
-              cn(
-                'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                isActive
-                  ? 'bg-gradient-to-r from-violet-600/15 to-indigo-600/10 text-violet-600 dark:from-violet-500/20 dark:to-indigo-500/10 dark:text-violet-400'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                collapsed && 'justify-center px-2'
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {isActive && (
-                  <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-violet-600 dark:bg-violet-400" />
-                )}
-                <item.icon className={cn('h-[18px] w-[18px] shrink-0', isActive && 'text-violet-600 dark:text-violet-400')} />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-                {collapsed && hoveredItem === item.to && (
-                  <div className="absolute left-full ml-2 rounded-md bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-lg border border-border z-50">
-                    {item.label}
-                  </div>
-                )}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {navEntries.map((entry) =>
+          isGroup(entry)
+            ? <SidebarGroup key={entry.id} group={entry} collapsed={collapsed} />
+            : <LeafLink key={entry.to} leaf={entry} collapsed={collapsed} />,
+        )}
       </nav>
 
       <Separator className="opacity-50" />
 
-      {/* Bottom section */}
+      {/* Bottom */}
       <div className="space-y-2 p-3">
         <Button
           variant="ghost"
@@ -118,12 +76,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
           {!collapsed && <span>{resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
         </Button>
 
-        <div
-          className={cn(
-            'flex items-center gap-3 rounded-lg bg-accent/50 p-2',
-            collapsed && 'justify-center'
-          )}
-        >
+        <div className={cn('flex items-center gap-3 rounded-lg bg-accent/50 p-2', collapsed && 'justify-center')}>
           <Avatar className="h-8 w-8 shrink-0">
             <AvatarFallback className="bg-gradient-to-br from-violet-600 to-indigo-600 text-[11px] font-bold text-white">
               {initials}
@@ -151,5 +104,41 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
       </button>
     </aside>
+  );
+}
+
+function SidebarGroup({
+  group, collapsed,
+}: {
+  group: import('./nav-config').NavGroup;
+  collapsed: boolean;
+}) {
+  const { pathname } = useLocation();
+  const containsActive = group.children.some((c) => pathname.startsWith(c.to));
+  const [open, setOpen] = useGroupOpen(group);
+
+  // When the rail is collapsed, render children inline (always visible) without the chevron header.
+  if (collapsed) {
+    return (
+      <div className="space-y-1">
+        <GroupHeader group={group} open={true} onToggle={() => undefined} collapsed containsActive={containsActive} />
+        {group.children.map((leaf) => (
+          <LeafLink key={leaf.to} leaf={leaf} collapsed />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <GroupHeader group={group} open={open} onToggle={() => setOpen(!open)} containsActive={containsActive} />
+      {open && (
+        <div className="space-y-0.5">
+          {group.children.map((leaf) => (
+            <LeafLink key={leaf.to} leaf={leaf} nested />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

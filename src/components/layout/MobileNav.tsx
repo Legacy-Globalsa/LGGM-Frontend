@@ -1,29 +1,20 @@
-import { NavLink, useNavigate } from 'react-router-dom';
-import {
-  LayoutDashboard, ArrowLeftRight, Scale, Receipt,
-  Landmark, FileBarChart, Settings, LogOut, Menu, Church,
-} from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { LogOut, Menu, Church } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/useAuth';
-import { cn } from '@/lib/utils';
 import { useState } from 'react';
-
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
-  { to: '/budget', icon: Scale, label: 'Budget' },
-  { to: '/bills', icon: Receipt, label: 'Bills' },
-  { to: '/loans', icon: Landmark, label: 'Loans' },
-  { to: '/reports', icon: FileBarChart, label: 'Reports' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-];
+import {
+  navEntries, isGroup, useGroupOpen, GroupHeader, LeafLink,
+} from './nav-config';
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const { logout } = useAuth();
   const navigate = useNavigate();
+
+  const close = () => setOpen(false);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -45,37 +36,47 @@ export function MobileNav() {
         </div>
         <Separator />
         <nav className="space-y-1 p-3">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-violet-600/10 text-violet-600 dark:text-violet-400'
-                    : 'text-muted-foreground hover:bg-accent'
-                )
-              }
-            >
-              <item.icon className="h-[18px] w-[18px]" />
-              {item.label}
-            </NavLink>
-          ))}
+          {navEntries.map((entry) =>
+            isGroup(entry)
+              ? <MobileGroup key={entry.id} group={entry} onNavigate={close} />
+              : <LeafLink key={entry.to} leaf={entry} onNavigate={close} />,
+          )}
         </nav>
         <Separator />
         <div className="p-3">
           <Button
             variant="ghost"
             className="w-full justify-start gap-3 text-destructive"
-            onClick={() => { logout(); navigate('/login'); setOpen(false); }}
+            onClick={() => { logout(); navigate('/login'); close(); }}
           >
             <LogOut className="h-4 w-4" /> Sign Out
           </Button>
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function MobileGroup({
+  group, onNavigate,
+}: {
+  group: import('./nav-config').NavGroup;
+  onNavigate: () => void;
+}) {
+  const { pathname } = useLocation();
+  const containsActive = group.children.some((c) => pathname.startsWith(c.to));
+  const [open, setOpen] = useGroupOpen(group);
+
+  return (
+    <div className="space-y-1">
+      <GroupHeader group={group} open={open} onToggle={() => setOpen(!open)} containsActive={containsActive} />
+      {open && (
+        <div className="space-y-0.5">
+          {group.children.map((leaf) => (
+            <LeafLink key={leaf.to} leaf={leaf} nested onNavigate={onNavigate} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

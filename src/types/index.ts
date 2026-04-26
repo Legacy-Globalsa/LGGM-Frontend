@@ -8,10 +8,12 @@ export interface Profile {
   updated_at: string;
 }
 
+/** Year-level distribution defaults. */
 export interface Year {
   id: string;
   user_id: string;
   year: number;
+  is_active: boolean;
   tithes_pct: number;
   offering_pct: number;
   savings_pct: number;
@@ -21,6 +23,23 @@ export interface Year {
   updated_at: string;
 }
 
+/**
+ * Per-month percentage override. Any null field falls back to the year default.
+ * One row per (year_id, month).
+ */
+export interface YearMonthOverride {
+  id: string;
+  user_id: string;
+  year_id: string;
+  month: number; // 1-12
+  tithes_pct: number | null;
+  offering_pct: number | null;
+  savings_pct: number | null;
+  first_fruit_pct: number | null;
+  other_expenses_pct: number | null;
+  notes: string;
+}
+
 export type BudgetStatus = 'under_budget' | 'at_budget' | 'over_budget';
 
 export interface MonthlyBudget {
@@ -28,19 +47,34 @@ export interface MonthlyBudget {
   user_id: string;
   year_id: string;
   month: number; // 1-12
+  /** Sum of all income transactions for the month (source: transactions table). */
   income_amount: number;
-  tithes: number;
-  offering: number;
-  savings: number;
-  first_fruit: number;
-  other_expenses: number;
-  loans_payment: number;
-  fixed_bills: number;
-  other_expenses_amount: number;
+  // Planned (income × resolved %)
+  tithes_planned: number;
+  offering_planned: number;
+  savings_planned: number;
+  first_fruit_planned: number;
+  other_planned: number;
+  // Actual (rolled up from obligation_entries)
+  tithes_actual: number;
+  offering_actual: number;
+  savings_actual: number; // only includes transferred savings entries
+  first_fruit_actual: number;
+  loans_actual: number;
+  fixed_bills_actual: number;
+  /** Sum of all expense transactions for the month (source: transactions table). */
+  other_actual: number;
   status: BudgetStatus;
   notes: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Per-month income + expense totals derived from the transactions table. */
+export interface TransactionMonthAggregate {
+  month: number;
+  income: number;
+  expenses: number;
 }
 
 export type TransactionType = 'income' | 'expense';
@@ -70,58 +104,70 @@ export interface Category {
   created_at: string;
 }
 
-export interface FixedMonthlyBill {
+// ─── Obligations (unified) ───────────────────────────────────────────
+
+export type ObligationKind =
+  | 'tithes'
+  | 'offering'
+  | 'first_fruit'
+  | 'savings'
+  | 'fixed_bill'
+  | 'loan'
+  | 'other';
+
+export interface Obligation {
   id: string;
   user_id: string;
   year_id: string;
+  kind: ObligationKind;
   description: string;
-  frequency: string;
-  amount: number;
+  frequency: 'Monthly' | 'Quarterly' | 'Annual' | 'One-off';
+  /** Fallback monthly amount for fixed obligations. Null for distributions. */
+  default_amount: number | null;
   remarks: string;
-  payments: BillPayment[];
+  // Loan-specific (undefined when kind !== 'loan')
+  interest_bearing?: boolean;
+  interest_pct?: number;
+  duration?: string;
+  loan_amount?: number;
+  interest_amount?: number;
+  entries: ObligationEntry[];
   created_at: string;
   updated_at: string;
 }
 
-export interface BillPayment {
+/** One entry per (obligation, month). Holds both planned and actual. */
+export interface ObligationEntry {
   id: string;
-  bill_id: string;
-  month: number;
-  amount: number;
-  paid: boolean;
-}
-
-export interface Loan {
-  id: string;
-  user_id: string;
+  obligation_id: string;
   year_id: string;
-  description: string;
-  interest_bearing: boolean;
-  interest_pct: number;
-  duration: string;
-  loan_amount: number;
-  interest_amount: number;
-  payments: LoanPayment[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface LoanPayment {
-  id: string;
-  loan_id: string;
-  month: number;
-  amount: number;
+  month: number; // 1-12
+  planned_amount: number;
+  actual_amount: number;
+  /** True for fixed bills/loans when paid; for distributions when given. */
+  paid: boolean;
+  /** Savings only — until true, actual_amount does NOT count toward actual KPI. */
+  transferred_to_bank?: boolean;
+  transferred_at?: string | null;
+  notes: string;
 }
 
 // ─── Dashboard Aggregates ────────────────────────────────────────────
 
+export interface PlannedActualPair {
+  planned: number;
+  actual: number;
+}
+
 export interface DashboardSummary {
+  year: number;
   totalIncome: number;
   totalExpenses: number;
-  totalTithes: number;
-  totalOffering: number;
-  totalSavings: number;
-  totalFirstFruit: number;
+  // Planned vs Actual per distribution
+  tithes: PlannedActualPair;
+  offering: PlannedActualPair;
+  savings: PlannedActualPair; // actual = transferred-to-bank only
+  firstFruit: PlannedActualPair;
   surplus: number;
   monthlyData: MonthlyOverview[];
 }
@@ -131,10 +177,10 @@ export interface MonthlyOverview {
   monthName: string;
   income: number;
   expenses: number;
-  tithes: number;
-  offering: number;
-  savings: number;
-  firstFruit: number;
+  tithes: PlannedActualPair;
+  offering: PlannedActualPair;
+  savings: PlannedActualPair;
+  firstFruit: PlannedActualPair;
   surplus: number;
   status: BudgetStatus;
 }
@@ -158,3 +204,41 @@ export function getMonthName(month: number): string {
 export function getMonthShort(month: number): string {
   return MONTH_SHORT[month - 1] ?? '';
 }
+
+export type PctField =
+  | 'tithes_pct'
+  | 'offering_pct'
+  | 'savings_pct'
+  | 'first_fruit_pct'
+  | 'other_expenses_pct';
+
+/** Resolve effective percentage for a given month (override → year default). */
+export function resolvePct(
+  field: PctField,
+  year: Year,
+  override?: YearMonthOverride | null,
+): number {
+  const v = override?.[field];
+  return v == null ? year[field] : v;
+}
+
+export const OBLIGATION_KIND_META: Record<
+  ObligationKind,
+  {
+    label: string;
+    pluralLabel: string;
+    /** Year-level pct field driving the planned amount (income × pct). Undefined for fixed kinds. */
+    pctField?: Extract<
+      PctField,
+      'tithes_pct' | 'offering_pct' | 'savings_pct' | 'first_fruit_pct'
+    >;
+  }
+> = {
+  tithes:      { label: 'Tithe',       pluralLabel: 'Tithes',           pctField: 'tithes_pct' },
+  offering:    { label: 'Offering',    pluralLabel: 'Offerings',        pctField: 'offering_pct' },
+  first_fruit: { label: 'First Fruit', pluralLabel: 'First Fruits',     pctField: 'first_fruit_pct' },
+  savings:     { label: 'Savings',     pluralLabel: 'Savings',          pctField: 'savings_pct' },
+  fixed_bill:  { label: 'Fixed Bill',  pluralLabel: 'Fixed Bills' },
+  loan:        { label: 'Loan',        pluralLabel: 'Loans' },
+  other:       { label: 'Other',       pluralLabel: 'Other Obligations' },
+};
