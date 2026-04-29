@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ export function SignupForm({
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const {
     register,
@@ -44,10 +45,17 @@ export function SignupForm({
   const onSubmit = async (data: SignupFormValues) => {
     try {
       setError('');
+      setSuccessMessage('');
       await signup(data.email, data.password, data.fullName);
       navigate('/');
-    } catch {
-      setError('Signup failed. Please try again.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Signup failed';
+      // Check if it's an email confirmation message (not a real error)
+      if (message.toLowerCase().includes('confirm') || message.toLowerCase().includes('check your email')) {
+        setSuccessMessage(message);
+      } else {
+        setError(message);
+      }
     }
   };
 
@@ -65,11 +73,18 @@ export function SignupForm({
             {error}
           </div>
         )}
+        {successMessage && (
+          <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-300">
+            <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+        )}
         <div className="grid gap-2">
           <Label htmlFor="fullName">Full Name</Label>
           <Input
             id="fullName"
             placeholder="John Doe"
+            autoComplete="name"
             {...register('fullName')}
           />
           {errors.fullName && (
@@ -84,6 +99,7 @@ export function SignupForm({
             id="email"
             type="email"
             placeholder="you@example.com"
+            autoComplete="email"
             {...register('email')}
           />
           {errors.email && (
@@ -97,6 +113,7 @@ export function SignupForm({
               id="password"
               type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
+              autoComplete="new-password"
               {...register('password')}
             />
             <button
@@ -123,6 +140,7 @@ export function SignupForm({
             id="confirmPassword"
             type="password"
             placeholder="••••••••"
+            autoComplete="new-password"
             {...register('confirmPassword')}
           />
           {errors.confirmPassword && (

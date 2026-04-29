@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,8 +23,12 @@ export function LoginForm({
 }: React.ComponentProps<'div'>) {
   const { login, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect to the page the user was trying to access, or dashboard
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
   const {
     register,
@@ -38,9 +42,10 @@ export function LoginForm({
     try {
       setError('');
       await login(data.email, data.password);
-      navigate('/');
-    } catch {
-      setError('Invalid email or password');
+      navigate(from, { replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Login failed';
+      setError(message);
     }
   };
 
@@ -64,6 +69,7 @@ export function LoginForm({
             id="email"
             type="email"
             placeholder="you@example.com"
+            autoComplete="email"
             {...register('email')}
           />
           {errors.email && (
@@ -85,6 +91,7 @@ export function LoginForm({
               id="password"
               type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
+              autoComplete="current-password"
               {...register('password')}
             />
             <button
