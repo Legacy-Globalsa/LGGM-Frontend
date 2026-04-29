@@ -10,9 +10,11 @@ import {
 import {
   mockYears, mockYearMonthOverrides, findYear, findActiveYear,
 } from '@/mocks/mockYears';
+import { mockMoneyAccounts } from '@/mocks/mockMoneyAccounts';
 import type {
   Transaction, MonthlyBudget, Obligation, ObligationKind, ObligationEntry,
   Category, Year, YearMonthOverride, DashboardSummary, TransactionMonthAggregate,
+  MoneyAccount,
 } from '@/types';
 
 const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms));
@@ -202,13 +204,14 @@ export async function updateObligationEntry(
   return entry;
 }
 
-/** Mark a savings entry as transferred to a bank account. */
+/** Mark a savings entry as transferred to a money account. */
 export async function markSavingsTransferred(
-  obligationId: string, month: number, transferred: boolean,
+  obligationId: string, month: number, transferred: boolean, accountId?: string,
 ): Promise<ObligationEntry> {
   return updateObligationEntry(obligationId, month, {
     transferred_to_bank: transferred,
     transferred_at: transferred ? new Date().toISOString() : null,
+    transferred_to_account: transferred ? (accountId ?? null) : null,
   });
 }
 
@@ -218,3 +221,37 @@ export async function fetchCategories(): Promise<Category[]> {
   await delay(80);
   return mockCategories;
 }
+
+// ─── Money Accounts ──────────────────────────────────────────────────
+
+export async function fetchMoneyAccounts(): Promise<MoneyAccount[]> {
+  await delay(80);
+  return mockMoneyAccounts.filter((a) => a.is_active);
+}
+
+export async function createMoneyAccount(
+  data: Partial<Omit<MoneyAccount, 'id' | 'user_id' | 'created_at' | 'updated_at'>>,
+): Promise<MoneyAccount> {
+  await delay(150);
+  const created: MoneyAccount = {
+    id: `ma-${Date.now()}`,
+    user_id: 'user-1',
+    name: data.name ?? '',
+    type: data.type ?? 'bank_account',
+    account_identifier: data.account_identifier ?? '',
+    balance: data.balance ?? 0,
+    is_active: true,
+    notes: data.notes ?? '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  mockMoneyAccounts.push(created);
+  return created;
+}
+
+export async function deleteMoneyAccount(id: string): Promise<void> {
+  await delay(120);
+  const idx = mockMoneyAccounts.findIndex((a) => a.id === id);
+  if (idx !== -1) mockMoneyAccounts[idx].is_active = false;
+}
+

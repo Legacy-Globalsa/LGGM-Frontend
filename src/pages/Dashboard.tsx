@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  TrendingUp, TrendingDown, PiggyBank, DollarSign,
+  TrendingUp, TrendingDown, Wallet, DollarSign,
   HandCoins, Sparkles, Heart, AlertTriangle, ArrowRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -53,7 +53,7 @@ export default function Dashboard() {
     { title: 'Total Income',   value: data.totalIncome,   icon: DollarSign,    color: 'from-emerald-500 to-teal-600',    bgColor: 'bg-emerald-500/10' },
     { title: 'Total Expenses', value: data.totalExpenses, icon: TrendingDown,  color: 'from-rose-500 to-pink-600',       bgColor: 'bg-rose-500/10' },
     { title: 'Surplus',        value: data.surplus,       icon: TrendingUp,    color: 'from-violet-500 to-indigo-600',   bgColor: 'bg-violet-500/10' },
-    { title: 'Savings (in bank)', value: data.savings.actual, icon: PiggyBank, color: 'from-amber-500 to-orange-600',    bgColor: 'bg-amber-500/10' },
+    { title: 'Money Accounts', value: data.savings.actual, icon: Wallet, color: 'from-amber-500 to-orange-600',    bgColor: 'bg-amber-500/10' },
   ];
 
   const chartData = data.monthlyData.map((m) => ({
@@ -101,11 +101,11 @@ export default function Dashboard() {
         <PlannedActualCard title="Offering"    icon={Sparkles}  pair={data.offering}   accent="indigo" />
         <PlannedActualCard title="First Fruit" icon={Heart}     pair={data.firstFruit} accent="emerald" />
         <PlannedActualCard
-          title="Savings"
-          icon={PiggyBank}
+          title="Money Accounts"
+          icon={Wallet}
           pair={data.savings}
           accent="amber"
-          footnote="Actual counts only after transfer to bank"
+          footnote="Actual counts only after transfer to an account"
         />
       </div>
 
@@ -128,7 +128,7 @@ export default function Dashboard() {
         </Card>
 
         <Card className="border-border/40">
-          <CardHeader><CardTitle className="text-base">Savings — Planned vs Actual (transferred)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Money Accounts — Planned vs Transferred</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData} barGap={4}>
@@ -138,7 +138,7 @@ export default function Dashboard() {
                 <Tooltip formatter={(val) => fmt(val as number)} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="savingsPlanned" name="Planned" fill="#fbbf24" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="savingsActual"  name="In bank" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="savingsActual"  name="Transferred" fill="#10b981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -179,7 +179,7 @@ export default function Dashboard() {
                 <TableHead className="text-right">Tithes (P / A)</TableHead>
                 <TableHead className="text-right">Offering (P / A)</TableHead>
                 <TableHead className="text-right">First Fruit (P / A)</TableHead>
-                <TableHead className="text-right">Savings (P / In bank)</TableHead>
+                <TableHead className="text-right">Money Acc. (P / Transferred)</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>

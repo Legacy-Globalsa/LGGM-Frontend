@@ -2,7 +2,9 @@
 
 ## Implementation Plan
 
-A responsive web application for **Lamb of God Global Ministries** to monitor and report on church financials — including expenses, income, tithes, seed/offering, savings, loan payments, payables, and fixed monthly bills — secured with Supabase Authentication.
+A responsive web application for **Lamb of God Global Ministries** to monitor and report on church financials — including expenses, income, tithes, seed/offering, money accounts (savings), loan payments, payables, and fixed monthly bills — secured with Supabase Authentication.
+
+> *"Each one must give as he has decided in his heart, not reluctantly or under compulsion, for God loves a cheerful giver."* — **2 Corinthians 9:7**
 
 ---
 
@@ -17,17 +19,17 @@ A responsive web application for **Lamb of God Global Ministries** to monitor an
 ### Core Modules
 | Module | Source Sheet | Description |
 | --- | --- | --- |
-| **Dashboard** | `2026` | Yearly overview with **Planned vs. Actual** side-by-side for every distribution (tithes, offering, savings, first fruit), monthly status, surplus, year filter |
+| **Dashboard** | `2026` | Yearly overview with **Planned vs. Actual** side-by-side for every distribution (tithes, offering, money accounts, first fruit), monthly status, surplus, year filter |
 | **Monthly Transactions** | `Jan`–`Dec` | Daily income/expense entries with category, status, notes; year + month filters |
 | **Budget vs. Actual** | `Actual` | Compares planned vs. actual figures month by month, status badge (`Under / At / Over budget`) |
-| **Obligations** | `Fixed Monthly Bills`, `List of Loans`, `2026` | Unified, **collapsible** sidebar group containing: Tithes · Offering · First Fruit · **Savings** · Fixed Bills · Loans · Other Obligations. Each tracks planned (from %) vs actual per month. |
+| **Obligations** | `Fixed Monthly Bills`, `List of Loans`, `2026` | Unified, **collapsible** sidebar group containing: Tithes · Offering · First Fruit · **Money Accounts** · Fixed Bills · Loans · Other Obligations. Each tracks planned (from %) vs actual per month. |
 | **Reports** | — | Monthly, yearly, category breakdowns; year filter; exportable to CSV/PDF |
 | **Settings** | — | Profile, theme, **per-year + per-month** distribution percentage overrides, active year |
 | **Auth** | — | Sign up, login, password reset; each user owns and manages their own financial data |
 
 ### Key concepts
-- **Planned vs. Actual.** For every distribution (tithes, offering, savings, first fruit) and every fixed obligation (bills, loans, other), the app stores both the *planned* amount (derived from the income × percentage rule) and the *actual* amount paid/given for that month. Both are displayed side by side on the dashboard and within each obligation page.
-- **Savings only counts when transferred.** A savings entry is considered *actual* only after it has been **transferred to a bank account**. Until then it remains planned-only and does not contribute to the actual savings KPI. Each savings record carries a `transferred_to_bank` flag and `transferred_at` date.
+- **Planned vs. Actual.** For every distribution (tithes, offering, savings/money accounts, first fruit) and every fixed obligation (bills, loans, other), the app stores both the *planned* amount (derived from the income × percentage rule) and the *actual* amount paid/given for that month. Both are displayed side by side on the dashboard and within each obligation page.
+- **Money Accounts (replaces "Savings").** The former Savings page has been refactored into **Money Accounts** — a tabbed interface that tracks where savings are stored. Supported account types: **Bank Account**, **Cash on Hand (Wallet)**, **STC Bank**, **GCash**, **E-Wallet**, and **Other**. A savings entry is considered *actual* only after it has been **transferred to a money account**. Until then it remains planned-only and does not contribute to the actual savings KPI. Each savings record carries a `transferred_to_bank` flag, `transferred_at` date, and `transferred_to_account` reference.
 - **Per-month percentage overrides.** Distribution percentages live at the year level (defaults), but any month can override any percentage (e.g. only 3% offering in April). The app stores these overrides in a child table keyed by `(year, month)` and falls back to year defaults when no override exists.
 - **Year filter everywhere.** A global year selector in the topbar (and per-page filter) drives every read query. The selected year is persisted in `localStorage` and exposed via a `YearContext`.
 
@@ -38,7 +40,7 @@ A responsive web application for **Lamb of God Global Ministries** to monitor an
 ```mermaid
 flowchart TD
     Start([User opens app]) --> CheckSession{Active session?}
-    CheckSession -- No --> Login[Login / Sign Up page]
+    CheckSession -- No --> Login["Login / Sign Up page<br/>(2 Cor 9:7 verse)"]
     Login --> Auth[(Supabase Auth)]
     Auth -- success --> Bootstrap[Bootstrap profile<br/>+ default year]
     CheckSession -- Yes --> Bootstrap
@@ -47,21 +49,24 @@ flowchart TD
     Dashboard --> Nav{Navigate}
     Nav --> Transactions[Monthly Transactions<br/>Jan – Dec tabs]
     Nav --> Budget[Budget vs Actual]
+    Nav --> MoneyAccounts[Money Accounts<br/>Bank / Wallet / STC / GCash]
     Nav --> Bills[Fixed Monthly Bills]
     Nav --> Loans[Loans & Payables]
     Nav --> Reports[Reports]
-    Nav --> Settings[Settings<br/>year config, profile]
+    Nav --> Settings["Settings<br/>year config, profile"]
 
     Transactions --> CRUD1[Create / Edit / Delete entry]
+    MoneyAccounts --> CRUD4[Add account + transfer savings]
     Bills --> CRUD2[Add bill + monthly payments]
     Loans --> CRUD3[Add loan + monthly payments]
-    Budget --> ViewStatus[View status badges<br/>Under / At / Over budget]
+    Budget --> ViewStatus["View status badges<br/>Under / At / Over budget"]
 
     CRUD1 --> API[(Express API)]
     CRUD2 --> API
     CRUD3 --> API
+    CRUD4 --> API
     Settings --> API
-    API --> RLS[(Supabase + RLS<br/>user_id = auth.uid)]
+    API --> RLS[("Supabase + RLS<br/>user_id = auth.uid")]
     RLS --> DB[(PostgreSQL)]
 
     Reports --> Aggregate[Aggregate from DB]
@@ -230,6 +235,17 @@ One row per (obligation, month) representing the **actual** amount given/paid fo
 - `paid bool` (for fixed bills/loans) or `given bool` (for distributions)
 - `transferred_to_bank bool default false` — **savings only**; until true the entry does not count toward the actual savings KPI
 - `transferred_at timestamptz`
+- `transferred_to_account uuid fk -> money_accounts` — **savings only**; which money account received the transfer
+- `notes text`
+
+### `money_accounts`
+Tracks where savings and funds are stored. Each user manages their own accounts.
+- `id`, `user_id fk`
+- `name text` (e.g. "Al Rajhi Bank", "GCash", "Cash on Hand")
+- `type text check (type in ('bank_account','cash_on_hand','stc_bank','gcash','e_wallet','other'))`
+- `account_identifier text` — last 4 digits, phone number, etc.
+- `balance numeric default 0`
+- `is_active bool default true`
 - `notes text`
 
 ### `audit_log`
@@ -258,7 +274,7 @@ using  (user_id = auth.uid())
 with check (user_id = auth.uid());
 ```
 
-Applied to every table (`years`, `year_month_overrides`, `monthly_budget`, `transactions`, `categories`, `obligations`, `obligation_entries`, `audit_log`).
+Applied to every table (`years`, `year_month_overrides`, `monthly_budget`, `transactions`, `categories`, `obligations`, `obligation_entries`, `money_accounts`, `audit_log`).
 
 ### Session handling
 - Supabase manages tokens (access + refresh) in browser via `@supabase/ssr`.
@@ -271,14 +287,20 @@ Applied to every table (`years`, `year_month_overrides`, `monthly_budget`, `tran
 
 ```
 Frontend/src/
+├── assets/
+│   ├── LGGM-Image.png            # Auth page hero image
+│   └── LGGM-Image2.png           # Sidebar logo (LGGM shield)
 ├── components/
 │   ├── ui/                       # shadcn components
-│   ├── layout/                   # AppShell, Sidebar (with collapsible Obligations group), Topbar with YearFilter
-│   ├── obligations/              # ObligationPage, PlannedVsActualGrid, TransferToBankDialog
+│   ├── layout/                   # AppShell, Sidebar (LGGM logo, Bible verse, collapsible Obligations), Topbar with YearFilter
+│   ├── obligations/              # ObligationPage, PlannedVsActualGrid
+│   ├── login-form.tsx            # Login form with 2 Cor 9:7 verse
+│   ├── signup-form.tsx           # Signup form with 2 Cor 9:7 verse
 │   ├── dashboard/                # KPI cards, PlannedVsActualCard
 │   └── filters/                  # YearFilter, MonthFilter
 ├── pages/
-│   ├── Login.tsx
+│   ├── Login.tsx                 # Hero image unaffected by dark/light mode
+│   ├── Signup.tsx                # Hero image unaffected by dark/light mode
 │   ├── Dashboard.tsx             # Planned vs Actual side-by-side
 │   ├── Transactions.tsx          # year + month tabs
 │   ├── Budget.tsx
@@ -286,22 +308,26 @@ Frontend/src/
 │   │   ├── Tithes.tsx
 │   │   ├── Offering.tsx
 │   │   ├── FirstFruit.tsx
-│   │   ├── Savings.tsx           # extra: transferred-to-bank flag
+│   │   ├── MoneyAccounts.tsx     # tabbed: Accounts (add/manage) + Savings Grid (transfer to specific account)
 │   │   ├── Bills.tsx             # fixed monthly bills
 │   │   ├── Loans.tsx
 │   │   └── Other.tsx
 │   ├── Reports.tsx
 │   └── Settings.tsx              # year defaults + monthly overrides grid
+├── mocks/
+│   ├── mockTransactions.ts
+│   ├── mockCategories.ts
+│   ├── mockObligations.ts        # tithes, offering, first fruit, savings, bills, loans, other
+│   ├── mockMoneyAccounts.ts      # Bank Account, Cash on Hand, STC Bank, GCash, E-Wallet
+│   └── mockYears.ts
 ├── lib/
 │   ├── client.ts                 # supabase browser client (exists)
 │   ├── server.ts                 # supabase server client (exists)
-│   ├── api.ts                    # axios/fetch wrapper to Express backend
+│   ├── api.ts                    # mock API abstraction (money accounts, obligations, transactions, etc.)
 │   └── utils.ts
-├── hooks/                        # useAuth, useYear, useObligations, …
-├── context/                      # YearContext
+├── hooks/                        # useAuth, useYear, useTheme, useCurrency, …
 ├── routes/                       # router config + RequireAuth guard
-├── schemas/                      # zod schemas (shared with form validation)
-└── types/                        # TS types matching DB schema
+└── types/                        # TS types matching DB schema (incl. MoneyAccount, MoneyAccountType)
 ```
 
 ### Responsive design
@@ -364,19 +390,23 @@ Backend/src/
 
 ### Phase 2 — Frontend Pages with Mock Data
 - Create `src/mocks/` with realistic mock data matching the 2026 spreadsheet
-  - `mockTransactions.ts`, `mockBudget.ts`, `mockCategories.ts`, `mockObligations.ts` (covers tithes, offering, first fruit, savings, bills, loans, other), `mockYearOverrides.ts`
+  - `mockTransactions.ts`, `mockCategories.ts`, `mockObligations.ts` (covers tithes, offering, first fruit, savings, bills, loans, other), `mockMoneyAccounts.ts` (Bank Account, Cash on Hand, STC Bank, GCash, E-Wallet), `mockYears.ts`
 - Create `src/lib/api.ts` as a thin abstraction returning mock data via Promises (so swapping to real fetch later is one-line per call)
 - Build pages with full interactivity backed by mocks:
-  - **Login / Signup** — forms with validation (no real auth yet)
+  - **Login / Signup** — forms with validation (no real auth yet); hero image **not affected by dark/light mode**; **Bible verse** (2 Corinthians 9:7) displayed below sign-in/sign-up links
   - **Dashboard** — KPI cards, **Planned vs Actual** side-by-side card per distribution, monthly status table, charts, year filter
   - **Transactions** — year filter, Jan–Dec tabs, table, add/edit dialog, delete confirm, filtering
   - **Budget** — computed budget table, planned vs actual columns, status badges, year filter
   - **Obligations** (one page per kind, all sharing `ObligationPage`):
     - Tithes, Offering, First Fruit, Other — list + planned-vs-actual grid + add/edit
-    - **Savings** — same grid + per-row "Transfer to Bank" action; only transferred entries roll up to actual KPI
+    - **Money Accounts** (replaces Savings) — tabbed interface:
+      - **Accounts tab**: Card grid showing each money account (Bank Account, Cash on Hand, STC Bank, GCash, E-Wallet, Other) with balance, type, and identifier. Add/remove accounts via dialog.
+      - **Savings Grid tab**: Per-month planned vs actual grid with dropdown to transfer savings to a specific money account (instead of a simple boolean toggle).
+      - Only transferred entries roll up to the dashboard's actual savings KPI.
     - Bills, Loans — existing behavior preserved, now under the unified group
   - **Reports** — year + month selectors, summary tables, CSV export (works on mock data)
   - **Settings** — profile, theme, year defaults, **per-month percentage overrides grid** (12 rows × 5 columns)
+- **Sidebar branding**: LGGM logo image (`LGGM-Image2.png`) replaces generic icon; Bible verse (2 Cor 9:7) shown in sidebar footer
 - **Test full UX flow** end-to-end with mocks. Iterate on layout, copy, responsiveness.
 
 ### Phase 3 — Backend Foundation

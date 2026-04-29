@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LogOut, Sun, Moon, ChevronLeft, ChevronRight, Church,
+  LogOut, Sun, Moon, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import {
   navEntries, isGroup, useGroupOpen, GroupHeader, LeafLink,
 } from './nav-config';
+import LGGMImage2 from '@/assets/LGGM-Image2.png';
 
 interface AppSidebarProps {
   collapsed: boolean;
@@ -40,8 +41,8 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     >
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 px-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-md">
-          <Church className="h-5 w-5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+          <img src={LGGMImage2} alt="LGGM Logo" className="h-9 w-9 object-contain" />
         </div>
         {!collapsed && (
           <div className="flex flex-col overflow-hidden">
@@ -54,7 +55,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       <Separator className="opacity-50" />
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {navEntries.map((entry) =>
           isGroup(entry)
             ? <SidebarGroup key={entry.id} group={entry} collapsed={collapsed} />
@@ -63,6 +64,20 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       </nav>
 
       <Separator className="opacity-50" />
+
+      {/* Bible verse */}
+      {!collapsed && (
+        <div className="px-3 py-2">
+          <div className="rounded-lg bg-accent/30 px-3 py-2 text-center">
+            <p className="text-[10px] italic leading-relaxed text-muted-foreground">
+              &ldquo;God loves a cheerful giver.&rdquo;
+            </p>
+            <p className="text-[9px] font-semibold text-muted-foreground/60">
+              — 2 Cor 9:7
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Bottom */}
       <div className="space-y-2 p-3">

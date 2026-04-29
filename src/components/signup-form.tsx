@@ -146,6 +146,14 @@ export function SignupForm({
           Sign in
         </Link>
       </div>
+      <div className="mt-2 rounded-lg border border-border/40 bg-accent/30 px-4 py-3 text-center">
+        <p className="text-xs italic leading-relaxed text-muted-foreground">
+          &ldquo;Each one must give as he has decided in his heart, not reluctantly or under compulsion, for God loves a cheerful giver.&rdquo;
+        </p>
+        <p className="mt-1 text-[10px] font-semibold text-muted-foreground/70">
+          — 2 Corinthians 9:7
+        </p>
+      </div>
     </div>
   );
 }

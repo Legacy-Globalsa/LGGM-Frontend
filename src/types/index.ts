@@ -149,7 +149,45 @@ export interface ObligationEntry {
   /** Savings only — until true, actual_amount does NOT count toward actual KPI. */
   transferred_to_bank?: boolean;
   transferred_at?: string | null;
+  /** ID of the money account that this savings entry was transferred to. */
+  transferred_to_account?: string | null;
   notes: string;
+}
+
+// ─── Money Accounts ──────────────────────────────────────────────────
+
+export type MoneyAccountType =
+  | 'bank_account'
+  | 'cash_on_hand'
+  | 'stc_bank'
+  | 'gcash'
+  | 'e_wallet'
+  | 'other';
+
+export const MONEY_ACCOUNT_TYPE_META: Record<
+  MoneyAccountType,
+  { label: string; description: string }
+> = {
+  bank_account: { label: 'Bank Account', description: 'Traditional bank savings or checking account' },
+  cash_on_hand: { label: 'Cash on Hand (Wallet)', description: 'Physical cash or wallet balance' },
+  stc_bank:     { label: 'STC Bank', description: 'STC Bank digital account' },
+  gcash:        { label: 'GCash', description: 'GCash e-wallet balance' },
+  e_wallet:     { label: 'E-Wallet', description: 'Other electronic wallet (PayPal, Maya, etc.)' },
+  other:        { label: 'Other', description: 'Other financial account or storage' },
+};
+
+export interface MoneyAccount {
+  id: string;
+  user_id: string;
+  name: string;
+  type: MoneyAccountType;
+  /** Optional identifier (last 4 digits, account name, etc.) */
+  account_identifier: string;
+  balance: number;
+  is_active: boolean;
+  notes: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Dashboard Aggregates ────────────────────────────────────────────
@@ -166,7 +204,7 @@ export interface DashboardSummary {
   // Planned vs Actual per distribution
   tithes: PlannedActualPair;
   offering: PlannedActualPair;
-  savings: PlannedActualPair; // actual = transferred-to-bank only
+  savings: PlannedActualPair; // actual = transferred-to-account only
   firstFruit: PlannedActualPair;
   surplus: number;
   monthlyData: MonthlyOverview[];
@@ -237,8 +275,9 @@ export const OBLIGATION_KIND_META: Record<
   tithes:      { label: 'Tithe',       pluralLabel: 'Tithes',           pctField: 'tithes_pct' },
   offering:    { label: 'Offering',    pluralLabel: 'Offerings',        pctField: 'offering_pct' },
   first_fruit: { label: 'First Fruit', pluralLabel: 'First Fruits',     pctField: 'first_fruit_pct' },
-  savings:     { label: 'Savings',     pluralLabel: 'Savings',          pctField: 'savings_pct' },
+  savings:     { label: 'Money Account', pluralLabel: 'Money Accounts', pctField: 'savings_pct' },
   fixed_bill:  { label: 'Fixed Bill',  pluralLabel: 'Fixed Bills' },
   loan:        { label: 'Loan',        pluralLabel: 'Loans' },
   other:       { label: 'Other',       pluralLabel: 'Other Obligations' },
 };
+
