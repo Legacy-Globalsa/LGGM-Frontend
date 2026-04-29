@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  TrendingUp, TrendingDown, Wallet, DollarSign,
+  TrendingUp, TrendingDown, Wallet, WalletCards,
   HandCoins, Sparkles, Heart, AlertTriangle, ArrowRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -50,7 +50,7 @@ export default function Dashboard() {
   }
 
   const kpiCards = [
-    { title: 'Total Income',   value: data.totalIncome,   icon: DollarSign,    color: 'from-emerald-500 to-teal-600',    bgColor: 'bg-emerald-500/10' },
+    { title: 'Total Income',   value: data.totalIncome,   icon: WalletCards,    color: 'from-emerald-500 to-teal-600',    bgColor: 'bg-emerald-500/10' },
     { title: 'Total Expenses', value: data.totalExpenses, icon: TrendingDown,  color: 'from-rose-500 to-pink-600',       bgColor: 'bg-rose-500/10' },
     { title: 'Surplus',        value: data.surplus,       icon: TrendingUp,    color: 'from-violet-500 to-indigo-600',   bgColor: 'bg-violet-500/10' },
     { title: 'Money Accounts', value: data.savings.actual, icon: Wallet, color: 'from-amber-500 to-orange-600',    bgColor: 'bg-amber-500/10' },
