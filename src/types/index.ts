@@ -90,6 +90,13 @@ export interface Transaction {
   category_id: string;
   category_name?: string;
   amount: number;
+  /**
+   * Money account affected by this transaction.
+   * - For `income`: account that receives the amount (balance += amount)
+   * - For `expense`: account that is debited (balance -= amount)
+   */
+  money_account_id: string | null;
+  money_account_name?: string;
   status: string;
   notes: string;
   created_at: string;

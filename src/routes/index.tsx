@@ -30,19 +30,20 @@ export const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: 'transactions', element: <Transactions /> },
       { path: 'budget', element: <Budget /> },
+      { path: 'money-accounts', element: <MoneyAccounts /> },
 
       // Obligations group
       { path: 'obligations', element: <Navigate to="/obligations/tithes" replace /> },
       { path: 'obligations/tithes',      element: <Tithes /> },
       { path: 'obligations/offering',    element: <Offering /> },
       { path: 'obligations/first-fruit', element: <FirstFruit /> },
-      { path: 'obligations/money-accounts', element: <MoneyAccounts /> },
       { path: 'obligations/bills',       element: <Bills /> },
       { path: 'obligations/loans',       element: <Loans /> },
       { path: 'obligations/other',       element: <OtherObligations /> },
 
       // Backwards-compatible redirects from old routes
-      { path: 'obligations/savings', element: <Navigate to="/obligations/money-accounts" replace /> },
+      { path: 'obligations/money-accounts', element: <Navigate to="/money-accounts" replace /> },
+      { path: 'obligations/savings', element: <Navigate to="/money-accounts" replace /> },
       { path: 'bills', element: <Navigate to="/obligations/bills" replace /> },
       { path: 'loans', element: <Navigate to="/obligations/loans" replace /> },
 

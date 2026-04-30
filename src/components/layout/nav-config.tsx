@@ -27,6 +27,7 @@ export const navEntries: NavEntry[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
   { to: '/budget', icon: Scale, label: 'Budget' },
+  { to: '/money-accounts', icon: PiggyBank, label: 'Money Accounts' },
   {
     id: 'obligations',
     icon: Wallet,
@@ -35,7 +36,6 @@ export const navEntries: NavEntry[] = [
       { to: '/obligations/tithes',      icon: HandCoins,       label: 'Tithes' },
       { to: '/obligations/offering',    icon: Sparkles,        label: 'Offering' },
       { to: '/obligations/first-fruit', icon: Heart,           label: 'First Fruit' },
-      { to: '/obligations/money-accounts', icon: PiggyBank, label: 'Money Accounts' },
       { to: '/obligations/bills',       icon: Receipt,         label: 'Fixed Bills' },
       { to: '/obligations/loans',       icon: Landmark,        label: 'Loans' },
       { to: '/obligations/other',       icon: MoreHorizontal,  label: 'Other' },

@@ -19,9 +19,11 @@ import {
 } from '@/components/ui/table';
 import {
   fetchTransactions, fetchCategories, createTransaction, deleteTransaction,
-  fetchTransactionAggregates,
+  fetchTransactionAggregates, fetchMoneyAccounts,
 } from '@/lib/api';
-import type { Transaction, Category, TransactionType, TransactionMonthAggregate } from '@/types';
+import type {
+  Transaction, Category, TransactionType, TransactionMonthAggregate, MoneyAccount,
+} from '@/types';
 import { MONTHS } from '@/types';
 import { useYear } from '@/hooks/useYear';
 import { useCurrency } from '@/hooks/useCurrency';
@@ -32,6 +34,7 @@ export default function Transactions() {
   const { formatCurrency: fmt, currency } = useCurrency();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<MoneyAccount[]>([]);
   const [aggregates, setAggregates] = useState<TransactionMonthAggregate[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -41,7 +44,7 @@ export default function Transactions() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     description: '', type: 'expense' as TransactionType,
-    category_id: '', amount: '', notes: '',
+    category_id: '', money_account_id: '', amount: '', notes: '',
     transaction_date: format(new Date(), 'yyyy-MM-dd'),
   });
 
@@ -51,8 +54,10 @@ export default function Transactions() {
       fetchTransactions(selectedYear, filterMonth === 'all' ? undefined : Number(filterMonth)),
       fetchCategories(),
       fetchTransactionAggregates(selectedYear),
-    ]).then(([t, c, agg]) => {
-      setTransactions(t); setCategories(c); setAggregates(agg); setLoading(false);
+      fetchMoneyAccounts(),
+    ]).then(([t, c, agg, accs]) => {
+      setTransactions(t); setCategories(c); setAggregates(agg); setAccounts(accs);
+      setLoading(false);
     });
   }, [selectedYear, filterMonth]);
 
@@ -60,7 +65,8 @@ export default function Transactions() {
     Promise.all([
       fetchTransactions(selectedYear, filterMonth === 'all' ? undefined : Number(filterMonth)),
       fetchTransactionAggregates(selectedYear),
-    ]).then(([t, agg]) => { setTransactions(t); setAggregates(agg); });
+      fetchMoneyAccounts(),
+    ]).then(([t, agg, accs]) => { setTransactions(t); setAggregates(agg); setAccounts(accs); });
 
   const handleAdd = async () => {
     const amount = parseFloat(form.amount);
@@ -68,13 +74,25 @@ export default function Transactions() {
       toast.error('Description, category and amount are required.');
       return;
     }
+    if (!form.money_account_id) {
+      toast.error('Please select the affected money account.');
+      return;
+    }
     const month = new Date(form.transaction_date).getMonth() + 1;
-    await createTransaction({ ...form, amount, month });
+    const category = categories.find((c) => c.id === form.category_id);
+    const account = accounts.find((a) => a.id === form.money_account_id);
+    await createTransaction({
+      ...form,
+      amount,
+      month,
+      category_name: category?.name,
+      money_account_name: account?.name,
+    });
     await reload();
     setDialogOpen(false);
     setForm({
-      description: '', type: 'expense', category_id: '', amount: '',
-      notes: '', transaction_date: format(new Date(), 'yyyy-MM-dd'),
+      description: '', type: 'expense', category_id: '', money_account_id: '',
+      amount: '', notes: '', transaction_date: format(new Date(), 'yyyy-MM-dd'),
     });
     toast.success('Transaction added');
   };
@@ -147,6 +165,27 @@ export default function Transactions() {
                   <Label>Amount ({currency})</Label>
                   <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Money Account
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    ({form.type === 'income' ? 'where the amount goes' : 'where the amount is deducted'})
+                  </span>
+                </Label>
+                <Select value={form.money_account_id} onValueChange={(v) => v && setForm({ ...form, money_account_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select affected account" /></SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}{a.account_identifier ? ` · ${a.account_identifier}` : ''}
+                      </SelectItem>
+                    ))}
+                    {accounts.length === 0 && (
+                      <SelectItem value="__none" disabled>No money accounts — add one first</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Notes</Label>
@@ -255,6 +294,7 @@ export default function Transactions() {
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Account</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="w-[60px]"></TableHead>
@@ -266,6 +306,9 @@ export default function Transactions() {
                     <TableCell>{format(new Date(t.transaction_date), 'MMM d')}</TableCell>
                     <TableCell className="font-medium">{t.description}</TableCell>
                     <TableCell className="text-muted-foreground">{t.category_name ?? '—'}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {t.money_account_name ?? accounts.find((a) => a.id === t.money_account_id)?.name ?? '—'}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={cn('text-[10px]',
                         t.type === 'income' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600')}>

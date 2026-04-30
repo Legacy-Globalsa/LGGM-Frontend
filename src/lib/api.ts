@@ -91,22 +91,44 @@ export async function fetchTransactions(yearNumber: number, month?: number): Pro
 
 export async function createTransaction(data: Partial<Transaction>): Promise<Transaction> {
   await delay(150);
+  const accountId = data.money_account_id ?? null;
+  const account = accountId ? mockMoneyAccounts.find((a) => a.id === accountId) : undefined;
   const newTxn: Transaction = {
     id: `txn-${Date.now()}`, user_id: 'user-1', year_id: data.year_id ?? 'year-2026',
     month: data.month ?? 1, transaction_date: data.transaction_date ?? new Date().toISOString().split('T')[0],
     description: data.description ?? '', type: data.type ?? 'expense',
     category_id: data.category_id ?? '', category_name: data.category_name,
-    amount: data.amount ?? 0, status: data.status ?? 'completed',
+    amount: data.amount ?? 0,
+    money_account_id: accountId,
+    money_account_name: data.money_account_name ?? account?.name,
+    status: data.status ?? 'completed',
     notes: data.notes ?? '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
   mockTransactions.push(newTxn);
+  // Reflect impact on the affected account's balance.
+  if (account) {
+    const sign = newTxn.type === 'income' ? 1 : -1;
+    account.balance += sign * newTxn.amount;
+    account.updated_at = new Date().toISOString();
+  }
   return newTxn;
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
   await delay(150);
   const idx = mockTransactions.findIndex((t) => t.id === id);
-  if (idx !== -1) mockTransactions.splice(idx, 1);
+  if (idx === -1) return;
+  const txn = mockTransactions[idx];
+  // Reverse the balance impact.
+  if (txn.money_account_id) {
+    const account = mockMoneyAccounts.find((a) => a.id === txn.money_account_id);
+    if (account) {
+      const sign = txn.type === 'income' ? -1 : 1;
+      account.balance += sign * txn.amount;
+      account.updated_at = new Date().toISOString();
+    }
+  }
+  mockTransactions.splice(idx, 1);
 }
 
 /**
