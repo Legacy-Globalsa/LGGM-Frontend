@@ -18,11 +18,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  fetchTransactions, fetchCategories, createTransaction, deleteTransaction,
-  fetchTransactionAggregates, fetchMoneyAccounts,
+  fetchTransactions, fetchCategories, seedDefaultCategories, createTransaction, deleteTransaction,
+  fetchTransactionAggregates,
 } from '@/lib/api';
 import type {
-  Transaction, Category, TransactionType, TransactionMonthAggregate, MoneyAccount,
+  Transaction, Category, TransactionType, TransactionMonthAggregate,
 } from '@/types';
 import { MONTHS } from '@/types';
 import { useYear } from '@/hooks/useYear';
@@ -30,11 +30,10 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { cn } from '@/lib/utils';
 
 export default function Transactions() {
-  const { selectedYear } = useYear();
+  const { selectedYear, selectedYearId } = useYear();
   const { formatCurrency: fmt, currency } = useCurrency();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<MoneyAccount[]>([]);
   const [aggregates, setAggregates] = useState<TransactionMonthAggregate[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -44,29 +43,32 @@ export default function Transactions() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     description: '', type: 'expense' as TransactionType,
-    category_id: '', money_account_id: '', amount: '', notes: '',
+    category_id: '', amount: '', notes: '',
     transaction_date: format(new Date(), 'yyyy-MM-dd'),
   });
 
   useEffect(() => {
+    if (!selectedYearId) return;
     setLoading(true);
     Promise.all([
-      fetchTransactions(selectedYear, filterMonth === 'all' ? undefined : Number(filterMonth)),
+      fetchTransactions(selectedYearId, filterMonth === 'all' ? undefined : Number(filterMonth)),
       fetchCategories(),
-      fetchTransactionAggregates(selectedYear),
-      fetchMoneyAccounts(),
-    ]).then(([t, c, agg, accs]) => {
-      setTransactions(t); setCategories(c); setAggregates(agg); setAccounts(accs);
+      fetchTransactionAggregates(selectedYearId),
+    ]).then(async ([t, c, agg]) => {
+      // Auto-seed default categories for new users
+      const cats = c.length === 0 ? await seedDefaultCategories() : c;
+      setTransactions(t); setCategories(cats); setAggregates(agg);
       setLoading(false);
     });
-  }, [selectedYear, filterMonth]);
+  }, [selectedYearId, filterMonth]);
 
-  const reload = () =>
-    Promise.all([
-      fetchTransactions(selectedYear, filterMonth === 'all' ? undefined : Number(filterMonth)),
-      fetchTransactionAggregates(selectedYear),
-      fetchMoneyAccounts(),
-    ]).then(([t, agg, accs]) => { setTransactions(t); setAggregates(agg); setAccounts(accs); });
+  const reload = () => {
+    if (!selectedYearId) return Promise.resolve();
+    return Promise.all([
+      fetchTransactions(selectedYearId, filterMonth === 'all' ? undefined : Number(filterMonth)),
+      fetchTransactionAggregates(selectedYearId),
+    ]).then(([t, agg]) => { setTransactions(t); setAggregates(agg); });
+  };
 
   const handleAdd = async () => {
     const amount = parseFloat(form.amount);
@@ -74,24 +76,19 @@ export default function Transactions() {
       toast.error('Description, category and amount are required.');
       return;
     }
-    if (!form.money_account_id) {
-      toast.error('Please select the affected money account.');
-      return;
-    }
     const month = new Date(form.transaction_date).getMonth() + 1;
     const category = categories.find((c) => c.id === form.category_id);
-    const account = accounts.find((a) => a.id === form.money_account_id);
     await createTransaction({
       ...form,
       amount,
       month,
+      year_id: selectedYearId ?? '',
       category_name: category?.name,
-      money_account_name: account?.name,
     });
     await reload();
     setDialogOpen(false);
     setForm({
-      description: '', type: 'expense', category_id: '', money_account_id: '',
+      description: '', type: 'expense', category_id: '',
       amount: '', notes: '', transaction_date: format(new Date(), 'yyyy-MM-dd'),
     });
     toast.success('Transaction added');
@@ -122,7 +119,7 @@ export default function Transactions() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white">
+            <Button className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">
               <Plus className="mr-2 h-4 w-4" /> Add Transaction
             </Button>
           </DialogTrigger>
@@ -153,7 +150,11 @@ export default function Transactions() {
                 <div className="space-y-2">
                   <Label>Category</Label>
                   <Select value={form.category_id} onValueChange={(v) => v && setForm({ ...form, category_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger>
+                      <span className={cn('truncate text-sm', !form.category_id && 'text-muted-foreground')}>
+                        {filteredCategories.find((c) => c.id === form.category_id)?.name ?? 'Select category'}
+                      </span>
+                    </SelectTrigger>
                     <SelectContent>
                       {filteredCategories.map((c) => (
                         <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
@@ -167,34 +168,13 @@ export default function Transactions() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>
-                  Money Account
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    ({form.type === 'income' ? 'where the amount goes' : 'where the amount is deducted'})
-                  </span>
-                </Label>
-                <Select value={form.money_account_id} onValueChange={(v) => v && setForm({ ...form, money_account_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select affected account" /></SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}{a.account_identifier ? ` · ${a.account_identifier}` : ''}
-                      </SelectItem>
-                    ))}
-                    {accounts.length === 0 && (
-                      <SelectItem value="__none" disabled>No money accounts — add one first</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
                 <Label>Notes</Label>
                 <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleAdd} className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
+              <Button onClick={handleAdd} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -263,7 +243,7 @@ export default function Transactions() {
               <Input placeholder="Search transactions…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={filterType} onValueChange={(v) => setFilterType(v as 'all' | TransactionType)}>
-              <SelectTrigger className="sm:w-[140px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="sm:w-35"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 <SelectItem value="income">Income</SelectItem>
@@ -271,7 +251,7 @@ export default function Transactions() {
               </SelectContent>
             </Select>
             <Select value={filterMonth} onValueChange={(v) => v && setFilterMonth(v)}>
-              <SelectTrigger className="sm:w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All months</SelectItem>
                 {MONTHS.map((m, i) => <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>)}
@@ -294,10 +274,9 @@ export default function Transactions() {
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Account</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="w-[60px]"></TableHead>
+                  <TableHead className="w-15"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -306,9 +285,6 @@ export default function Transactions() {
                     <TableCell>{format(new Date(t.transaction_date), 'MMM d')}</TableCell>
                     <TableCell className="font-medium">{t.description}</TableCell>
                     <TableCell className="text-muted-foreground">{t.category_name ?? '—'}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {t.money_account_name ?? accounts.find((a) => a.id === t.money_account_id)?.name ?? '—'}
-                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={cn('text-[10px]',
                         t.type === 'income' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600')}>

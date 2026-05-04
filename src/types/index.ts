@@ -91,9 +91,8 @@ export interface Transaction {
   category_name?: string;
   amount: number;
   /**
-   * Money account affected by this transaction.
-   * - For `income`: account that receives the amount (balance += amount)
-   * - For `expense`: account that is debited (balance -= amount)
+    * Historical/optional account link. Normal transactions do not change
+    * money account balances; savings transfers do that through obligation entries.
    */
   money_account_id: string | null;
   money_account_name?: string;

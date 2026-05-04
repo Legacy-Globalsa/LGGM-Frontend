@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchBudgets, fetchYear } from '@/lib/api';
-import { getStatusColor, getStatusLabel } from '@/mocks/mockObligations';
+import { getStatusColor, getStatusLabel } from '@/lib/utils';
 import { getMonthName } from '@/types';
 import type { MonthlyBudget, Year } from '@/types';
 import { useYear } from '@/hooks/useYear';
@@ -16,7 +16,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import { cn } from '@/lib/utils';
 
 export default function Budget() {
-  const { selectedYear } = useYear();
+  const { selectedYear, selectedYearId } = useYear();
   const { formatCurrency: fmt } = useCurrency();
   const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
   const [year, setYear] = useState<Year | null>(null);
@@ -24,11 +24,12 @@ export default function Budget() {
   const [viewTab, setViewTab] = useState('summary');
 
   useEffect(() => {
+    if (!selectedYearId) return;
     setLoading(true);
-    Promise.all([fetchBudgets(selectedYear), fetchYear(selectedYear)]).then(([b, y]) => {
+    Promise.all([fetchBudgets(selectedYearId), fetchYear(selectedYear)]).then(([b, y]) => {
       setBudgets(b); setYear(y); setLoading(false);
     });
-  }, [selectedYear]);
+  }, [selectedYearId, selectedYear]);
 
   if (loading || !year) return (
     <div className="space-y-4">

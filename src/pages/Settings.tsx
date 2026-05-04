@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { User, Palette, Calendar, Save, Percent, RotateCcw } from 'lucide-react';
+import { User, Palette, Calendar, Save, Percent, RotateCcw, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import type { CurrencyCode } from '@/hooks/useCurrency';
 import { useYear } from '@/hooks/useYear';
 import {
-  fetchYear, fetchYearOverrides, updateYear, upsertYearOverride,
+  fetchYear, fetchYearOverrides, updateYear, upsertYearOverride, createYear,
 } from '@/lib/api';
 import {
   MONTH_SHORT, getMonthShort, type Year, type YearMonthOverride, type PctField,
@@ -52,36 +52,59 @@ export default function Settings() {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const { currency, setCurrency } = useCurrency();
-  const { selectedYear } = useYear();
+  const { selectedYear, availableYears, loading: yearLoading } = useYear();
 
   const [year, setYear] = useState<Year | null>(null);
+  const [noYear, setNoYear] = useState(false);
   const [overrides, setOverrides] = useState<YearMonthOverride[]>([]);
   const [draft, setDraft] = useState<DraftOverrides>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creatingYear, setCreatingYear] = useState(false);
+  const [newYearNumber, setNewYearNumber] = useState(String(new Date().getFullYear()));
 
   const [fullName, setFullName] = useState(user?.full_name ?? '');
+  const [sampleIncome, setSampleIncome] = useState('');
   const [yearDefaults, setYearDefaults] = useState({
     tithes_pct: '', offering_pct: '', savings_pct: '', first_fruit_pct: '', other_expenses_pct: '',
   });
 
   useEffect(() => {
+    if (yearLoading) return;
+    if (availableYears.length === 0) { setNoYear(true); setLoading(false); return; }
+    setNoYear(false);
     setLoading(true);
-    fetchYear(selectedYear).then(async (y) => {
-      setYear(y);
-      setYearDefaults({
-        tithes_pct: String(y.tithes_pct),
-        offering_pct: String(y.offering_pct),
-        savings_pct: String(y.savings_pct),
-        first_fruit_pct: String(y.first_fruit_pct),
-        other_expenses_pct: String(y.other_expenses_pct),
-      });
-      const ovr = await fetchYearOverrides(y.id);
-      setOverrides(ovr);
-      setDraft(buildDraft(ovr));
-      setLoading(false);
-    });
-  }, [selectedYear]);
+    fetchYear(selectedYear)
+      .then(async (y) => {
+        setYear(y);
+        setYearDefaults({
+          tithes_pct: String(y.tithes_pct),
+          offering_pct: String(y.offering_pct),
+          savings_pct: String(y.savings_pct),
+          first_fruit_pct: String(y.first_fruit_pct),
+          other_expenses_pct: String(y.other_expenses_pct),
+        });
+        const ovr = await fetchYearOverrides(y.id);
+        setOverrides(ovr);
+        setDraft(buildDraft(ovr));
+        setLoading(false);
+      })
+      .catch(() => { setNoYear(true); setLoading(false); });
+  }, [selectedYear, availableYears, yearLoading]);
+
+  const handleCreateYear = async () => {
+    const num = parseInt(newYearNumber, 10);
+    if (!num || num < 2000 || num > 2100) { toast.error('Enter a valid year (2000–2100)'); return; }
+    setCreatingYear(true);
+    try {
+      await createYear({ year: num, is_active: true });
+      window.location.reload();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create year');
+    } finally {
+      setCreatingYear(false);
+    }
+  };
 
   const setCell = (month: number, field: PctField, value: string) => {
     setDraft((prev) => ({ ...prev, [month]: { ...prev[month], [field]: value } }));
@@ -135,6 +158,19 @@ export default function Settings() {
 
   const sumDefaults = PCT_FIELDS.reduce((s, f) => s + (parseFloat(yearDefaults[f.key]) || 0), 0);
 
+  const getEffectivePct = (m: number, field: PctField): number => {
+    if (!year) return 0;
+    const v = draft[m]?.[field]?.trim();
+    return v !== '' && v != null ? (parseFloat(v) || 0) : (year[field] as number);
+  };
+
+  const getRowSum = (m: number) =>
+    PCT_FIELDS.reduce((s, f) => s + getEffectivePct(m, f.key), 0);
+
+  const sampleAmt = parseFloat(sampleIncome) || 0;
+  const fmtAmt = (n: number) =>
+    new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.round(n));
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
@@ -143,6 +179,35 @@ export default function Settings() {
           Profile, appearance, and the distribution percentages used for {selectedYear}.
         </p>
       </div>
+
+      {/* New-user: no year exists yet */}
+      {noYear && (
+        <Card className="border-violet-500/40 bg-violet-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Calendar className="h-4 w-4 text-violet-500" /> Create Your First Financial Year
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="new-year">Year</Label>
+              <Input
+                id="new-year"
+                className="w-32"
+                value={newYearNumber}
+                onChange={(e) => setNewYearNumber(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={handleCreateYear}
+              disabled={creatingYear}
+              className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white"
+            >
+              {creatingYear ? 'Creating…' : 'Create Year'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Profile */}
       <Card className="border-border/40">
@@ -261,6 +326,7 @@ export default function Settings() {
                       </div>
                     </TableHead>
                   ))}
+                  <TableHead className="w-[72px] text-center text-xs">Total %</TableHead>
                   <TableHead className="w-[60px] text-center">Reset</TableHead>
                 </TableRow>
               </TableHeader>
@@ -270,17 +336,38 @@ export default function Settings() {
                   return (
                     <TableRow key={m}>
                       <TableCell className="sticky left-0 z-10 bg-card font-medium">{getMonthShort(m)}</TableCell>
-                      {PCT_FIELDS.map((f) => (
-                        <TableCell key={f.key} className="p-1">
-                          <Input
-                            type="number" min={0} max={100} step={0.1}
-                            placeholder={`${year[f.key]}`}
-                            value={draft[m]?.[f.key] ?? ''}
-                            onChange={(e) => setCell(m, f.key, e.target.value)}
-                            className="h-8 w-[72px] text-center text-xs"
-                          />
-                        </TableCell>
-                      ))}
+                      {PCT_FIELDS.map((f) => {
+                        const isOvr = (draft[m]?.[f.key]?.trim() ?? '') !== '';
+                        return (
+                          <TableCell key={f.key} className="p-1">
+                            <Input
+                              type="number" min={0} max={100} step={0.1}
+                              placeholder={`${year[f.key]}`}
+                              value={draft[m]?.[f.key] ?? ''}
+                              onChange={(e) => setCell(m, f.key, e.target.value)}
+                              className={cn(
+                                'h-8 w-[72px] text-center text-xs',
+                                isOvr && 'border-violet-400 bg-violet-50 dark:bg-violet-950/30',
+                              )}
+                            />
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-center">
+                        {(() => {
+                          const total = Math.round(getRowSum(m) * 10) / 10;
+                          return (
+                            <span className={cn(
+                              'text-xs font-semibold tabular-nums',
+                              Math.round(total) === 100
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-amber-600 dark:text-amber-400',
+                            )}>
+                              {total}%
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="text-center">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => clearMonth(m)}>
                           <RotateCcw className="h-3 w-3" />
@@ -292,6 +379,82 @@ export default function Settings() {
               </TableBody>
             </Table>
           )}
+
+          {/* Income Distribution Preview */}
+          <div className="space-y-3 px-4 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Calculator className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-xs">Preview with sample monthly income:</Label>
+              <Input
+                type="number"
+                min={0}
+                placeholder="e.g. 8500"
+                value={sampleIncome}
+                onChange={(e) => setSampleIncome(e.target.value)}
+                className="h-8 w-32 text-xs"
+              />
+              {sampleAmt > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Showing {currency} {fmtAmt(sampleAmt)}/month distribution
+                </span>
+              )}
+            </div>
+            {sampleAmt > 0 && !loading && year && (
+              <div className="overflow-x-auto rounded border border-border/40">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/20">
+                      <TableHead className="text-xs">Month</TableHead>
+                      {PCT_FIELDS.map((f) => (
+                        <TableHead key={f.key} className="text-center text-xs">{f.label}</TableHead>
+                      ))}
+                      <TableHead className="text-center text-xs font-semibold">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {MONTH_SHORT.map((_, i) => {
+                      const m = i + 1;
+                      const rowSum = getRowSum(m);
+                      return (
+                        <TableRow key={m} className="text-xs">
+                          <TableCell className="font-medium">{getMonthShort(m)}</TableCell>
+                          {PCT_FIELDS.map((f) => {
+                            const pct = getEffectivePct(m, f.key);
+                            const amt = (sampleAmt * pct) / 100;
+                            const isOvr = (draft[m]?.[f.key]?.trim() ?? '') !== '';
+                            return (
+                              <TableCell
+                                key={f.key}
+                                className={cn(
+                                  'text-center',
+                                  isOvr
+                                    ? 'font-medium text-violet-600 dark:text-violet-400'
+                                    : 'text-muted-foreground',
+                                )}
+                              >
+                                {fmtAmt(amt)}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell
+                            className={cn(
+                              'text-center font-semibold',
+                              Math.round(rowSum) === 100
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-amber-600 dark:text-amber-400',
+                            )}
+                          >
+                            {fmtAmt((sampleAmt * rowSum) / 100)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
           <Separator />
           <div className="flex justify-end p-4">
             <Button onClick={saveOverrides} disabled={saving} className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white">

@@ -4,6 +4,7 @@ import type { Year } from '@/types';
 
 interface YearContextValue {
   selectedYear: number;
+  selectedYearId: string | null;
   setSelectedYear: (y: number) => void;
   availableYears: Year[];
   loading: boolean;
@@ -21,15 +22,18 @@ export function YearProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    fetchYears().then((years) => {
-      setAvailableYears(years);
-      // If selected year isn't available, fall back to the active year
-      if (!years.some((y) => y.year === selectedYear)) {
-        const active = years.find((y) => y.is_active) ?? years[0];
-        if (active) setSelectedYearState(active.year);
-      }
-      setLoading(false);
-    });
+    fetchYears()
+      .then((years) => {
+        setAvailableYears(years);
+        if (years.length === 0) { setLoading(false); return; }
+        // If selected year isn't available, fall back to the active year
+        if (!years.some((y) => y.year === selectedYear)) {
+          const active = years.find((y) => y.is_active) ?? years[0];
+          if (active) setSelectedYearState(active.year);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -39,7 +43,13 @@ export function YearProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ selectedYear, setSelectedYear, availableYears, loading }),
+    () => ({
+      selectedYear,
+      selectedYearId: availableYears.find((y) => y.year === selectedYear)?.id ?? null,
+      setSelectedYear,
+      availableYears,
+      loading,
+    }),
     [selectedYear, setSelectedYear, availableYears, loading],
   );
 

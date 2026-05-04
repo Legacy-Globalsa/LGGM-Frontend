@@ -15,6 +15,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
@@ -25,6 +30,7 @@ import { useCurrency } from '@/hooks/useCurrency';
 import {
   fetchObligations, updateObligationEntry, markSavingsTransferred,
   fetchMoneyAccounts, createMoneyAccount, deleteMoneyAccount,
+  createObligation, deleteObligation,
 } from '@/lib/api';
 import { MONTH_SHORT, MONEY_ACCOUNT_TYPE_META } from '@/types';
 import type { Obligation, MoneyAccount, MoneyAccountType } from '@/types';
@@ -40,8 +46,8 @@ const accountTypeIcons: Record<MoneyAccountType, typeof Wallet> = {
 };
 
 export default function MoneyAccountsPage() {
-  const { selectedYear } = useYear();
-  const { formatCurrency: fmt } = useCurrency();
+  const { selectedYear, selectedYearId } = useYear();
+  const { formatCurrency: fmt, currency } = useCurrency();
 
   const [obligations, setObligations] = useState<Obligation[]>([]);
   const [accounts, setAccounts] = useState<MoneyAccount[]>([]);
@@ -55,6 +61,13 @@ export default function MoneyAccountsPage() {
     account_identifier: '',
     balance: '',
     notes: '',
+  });
+  const [savingsOpen, setSavingsOpen] = useState(false);
+  const [savingsForm, setSavingsForm] = useState({
+    description: '',
+    default_amount: '',
+    frequency: 'Monthly' as Obligation['frequency'],
+    remarks: '',
   });
 
   useEffect(() => {
@@ -79,14 +92,14 @@ export default function MoneyAccountsPage() {
   };
 
   const totals = useMemo(() => {
-    let planned = 0, actual = 0, transferredActual = 0;
+    let planned = 0, recorded = 0, transferredActual = 0;
     obligations.forEach((o) => o.entries.forEach((e) => {
       planned += e.planned_amount;
-      actual += e.actual_amount;
+      recorded += e.actual_amount;
       if (e.transferred_to_bank) transferredActual += e.actual_amount;
     }));
     const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
-    return { planned, actual, transferredActual, totalBalance };
+    return { planned, recorded, transferredActual, totalBalance };
   }, [obligations, accounts]);
 
   const handleAddAccount = async () => {
@@ -107,6 +120,27 @@ export default function MoneyAccountsPage() {
     await deleteMoneyAccount(id);
     await reload();
     toast.success('Account removed');
+  };
+
+  const handleAddSavings = async () => {
+    if (!selectedYearId) return;
+    if (!savingsForm.description.trim()) {
+      toast.error('Savings description is required.');
+      return;
+    }
+
+    await createObligation({
+      kind: 'savings',
+      year_id: selectedYearId,
+      description: savingsForm.description.trim(),
+      frequency: savingsForm.frequency,
+      default_amount: parseFloat(savingsForm.default_amount) || 0,
+      remarks: savingsForm.remarks,
+    });
+    await reload();
+    toast.success('Savings plan added');
+    setSavingsOpen(false);
+    setSavingsForm({ description: '', default_amount: '', frequency: 'Monthly', remarks: '' });
   };
 
   if (loading) {
@@ -140,8 +174,8 @@ export default function MoneyAccountsPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Total Balance" value={fmt(totals.totalBalance)} accent="emerald" />
         <KpiCard label="Planned Savings (YTD)" value={fmt(totals.planned)} />
-        <KpiCard label="Actual Savings (YTD)" value={fmt(totals.actual)} accent={totals.actual < totals.planned ? 'amber' : 'emerald'} />
-        <KpiCard label="Transferred to Accounts" value={fmt(totals.transferredActual)} accent="emerald" />
+        <KpiCard label="Recorded Savings (YTD)" value={fmt(totals.recorded)} accent={totals.recorded < totals.planned ? 'amber' : 'emerald'} />
+        <KpiCard label="Actual Savings (Transferred)" value={fmt(totals.transferredActual)} accent="emerald" />
       </div>
 
       {/* Tabs */}
@@ -156,7 +190,7 @@ export default function MoneyAccountsPage() {
           <div className="flex justify-end">
             <Dialog open={addOpen} onOpenChange={setAddOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white">
+                <Button className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">
                   <Plus className="mr-2 h-4 w-4" /> Add Account
                 </Button>
               </DialogTrigger>
@@ -211,7 +245,7 @@ export default function MoneyAccountsPage() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-                  <Button onClick={handleAddAccount} className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
+                  <Button onClick={handleAddAccount} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -230,7 +264,7 @@ export default function MoneyAccountsPage() {
                 const meta = MONEY_ACCOUNT_TYPE_META[acc.type];
                 return (
                   <Card key={acc.id} className="group relative overflow-hidden border-border/40 transition-shadow hover:shadow-lg">
-                    <div className="absolute inset-0 bg-gradient-to-br from-violet-600/5 to-indigo-600/5 opacity-0 transition-opacity group-hover:opacity-100" />
+                    <div className="absolute inset-0 bg-linear-to-br from-violet-600/5 to-indigo-600/5 opacity-0 transition-opacity group-hover:opacity-100" />
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center justify-between text-sm">
                         <span className="flex items-center gap-2.5">
@@ -242,13 +276,34 @@ export default function MoneyAccountsPage() {
                             <p className="text-[10px] font-normal text-muted-foreground">{meta.label}</p>
                           </div>
                         </span>
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteAccount(acc.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+                              title="Remove account"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remove "{acc.name || acc.type}"?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will deactivate the account. Existing savings entries linked to it will not be affected.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteAccount(acc.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Remove
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -273,10 +328,67 @@ export default function MoneyAccountsPage() {
 
         {/* Savings Grid Tab */}
         <TabsContent value="savings" className="space-y-4">
+          <div className="flex justify-end">
+            <Dialog open={savingsOpen} onOpenChange={setSavingsOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">
+                  <Plus className="mr-2 h-4 w-4" /> Add Savings Plan
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>New Savings Plan</DialogTitle></DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input
+                      placeholder="e.g. Monthly Savings"
+                      value={savingsForm.description}
+                      onChange={(e) => setSavingsForm({ ...savingsForm, description: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Frequency</Label>
+                      <Select value={savingsForm.frequency} onValueChange={(v) => v && setSavingsForm({ ...savingsForm, frequency: v as Obligation['frequency'] })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Monthly">Monthly</SelectItem>
+                          <SelectItem value="Quarterly">Quarterly</SelectItem>
+                          <SelectItem value="Annual">Annual</SelectItem>
+                          <SelectItem value="One-off">One-off</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Planned Amount ({currency})</Label>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={savingsForm.default_amount}
+                        onChange={(e) => setSavingsForm({ ...savingsForm, default_amount: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Remarks</Label>
+                    <Input
+                      placeholder="Optional"
+                      value={savingsForm.remarks}
+                      onChange={(e) => setSavingsForm({ ...savingsForm, remarks: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setSavingsOpen(false)}>Cancel</Button>
+                  <Button onClick={handleAddSavings} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
           {obligations.length === 0 ? (
             <Card className="border-dashed border-border/40">
               <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                No savings obligations for {selectedYear}.
+                No savings plans for {selectedYear}. Click <strong>Add Savings Plan</strong> to create one.
               </CardContent>
             </Card>
           ) : (
@@ -287,6 +399,7 @@ export default function MoneyAccountsPage() {
                   obligation={o}
                   accounts={accounts}
                   onUpdated={reload}
+                  onDeleted={reload}
                   fmt={fmt}
                 />
               ))}
@@ -317,11 +430,12 @@ function KpiCard({ label, value, accent }: { label: string; value: string; accen
 }
 
 function SavingsGrid({
-  obligation, accounts, onUpdated, fmt,
+  obligation, accounts, onUpdated, onDeleted, fmt,
 }: {
   obligation: Obligation;
   accounts: MoneyAccount[];
   onUpdated: () => void;
+  onDeleted: () => void;
   fmt: (n: number) => string;
 }) {
   const [editingMonth, setEditingMonth] = useState<number | null>(null);
@@ -336,9 +450,12 @@ function SavingsGrid({
   const saveActual = async () => {
     if (editingMonth == null) return;
     const value = parseFloat(actualDraft) || 0;
-    await updateObligationEntry(obligation.id, editingMonth, {
+    const existingEntry = obligation.entries.find((e) => e.month === editingMonth);
+    const plannedFallback = existingEntry?.planned_amount ?? obligation.default_amount ?? 0;
+    await updateObligationEntry(obligation.id, obligation.year_id, editingMonth, {
       actual_amount: value,
       paid: value > 0,
+      planned_amount: plannedFallback,
     });
     setEditingMonth(null);
     onUpdated();
@@ -346,15 +463,21 @@ function SavingsGrid({
   };
 
   const handleTransfer = async (month: number, accountId: string) => {
-    await markSavingsTransferred(obligation.id, month, true, accountId);
+    await markSavingsTransferred(obligation.id, obligation.year_id, month, true, accountId);
     onUpdated();
     toast.success('Transferred to account');
   };
 
   const removeTransfer = async (month: number) => {
-    await markSavingsTransferred(obligation.id, month, false);
+    await markSavingsTransferred(obligation.id, obligation.year_id, month, false);
     onUpdated();
     toast.success('Transfer removed');
+  };
+
+  const handleDelete = async () => {
+    await deleteObligation(obligation.id);
+    toast.success(`"${obligation.description}" deleted`);
+    onDeleted();
   };
 
   return (
@@ -362,9 +485,40 @@ function SavingsGrid({
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-sm font-semibold">{obligation.description}</CardTitle>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary" className="text-[10px]">{obligation.frequency}</Badge>
-            {obligation.remarks && <span className="truncate">· {obligation.remarks}</span>}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="secondary" className="text-[10px]">{obligation.frequency}</Badge>
+              {obligation.remarks && <span className="truncate">· {obligation.remarks}</span>}
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  title="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete "{obligation.description}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this savings plan and its monthly entries. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </CardHeader>
@@ -372,17 +526,17 @@ function SavingsGrid({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="sticky left-0 z-10 bg-card min-w-[80px]">Month</TableHead>
+              <TableHead className="sticky left-0 z-10 bg-card min-w-20">Month</TableHead>
               <TableHead className="text-right">Planned</TableHead>
               <TableHead className="text-right">Actual</TableHead>
               <TableHead className="text-center">Status</TableHead>
-              <TableHead className="text-center min-w-[180px]">Transfer to Account</TableHead>
+              <TableHead className="text-center min-w-45">Transfer to Account</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
               const e = obligation.entries.find((x) => x.month === m);
-              const planned = e?.planned_amount ?? 0;
+              const planned = e?.planned_amount ?? obligation.default_amount ?? 0;
               const actual = e?.actual_amount ?? 0;
               const paid = e?.paid ?? false;
               const transferred = !!e?.transferred_to_bank;
@@ -400,7 +554,7 @@ function SavingsGrid({
                           value={actualDraft}
                           onChange={(ev) => setActualDraft(ev.target.value)}
                           onKeyDown={(ev) => { if (ev.key === 'Enter') saveActual(); if (ev.key === 'Escape') setEditingMonth(null); }}
-                          className="h-8 w-[110px] text-right text-sm"
+                          className="h-8 w-27.5 text-right text-sm"
                         />
                         <Button size="sm" className="h-8" onClick={saveActual}>Save</Button>
                       </div>
@@ -443,13 +597,13 @@ function SavingsGrid({
                       </div>
                     ) : (
                       <Select
-                        disabled={!paid}
+                        disabled={!paid || accounts.length === 0}
                         onValueChange={(accountId: string | null) => {
                           if (accountId) handleTransfer(m, accountId);
                         }}
                       >
-                        <SelectTrigger className={cn('h-7 text-[11px] w-[160px] mx-auto', !paid && 'opacity-50')}>
-                          <SelectValue placeholder="Select account" />
+                        <SelectTrigger className={cn('h-7 text-[11px] w-40 mx-auto', (!paid || accounts.length === 0) && 'opacity-50')}>
+                          <SelectValue placeholder={accounts.length === 0 ? 'Add account first' : 'Select account'} />
                         </SelectTrigger>
                         <SelectContent>
                           {accounts.map((acc) => (

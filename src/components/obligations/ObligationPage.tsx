@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, CheckCircle2, Circle, Banknote, AlertTriangle, Edit2 } from 'lucide-react';
+import { Plus, CheckCircle2, Circle, Banknote, AlertTriangle, Edit2, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
@@ -21,7 +26,7 @@ import {
 import { useYear } from '@/hooks/useYear';
 import { useCurrency } from '@/hooks/useCurrency';
 import {
-  fetchObligations, createObligation, updateObligationEntry, markSavingsTransferred,
+  fetchObligations, createObligation, deleteObligation, updateObligationEntry, markSavingsTransferred,
 } from '@/lib/api';
 import { MONTH_SHORT, OBLIGATION_KIND_META } from '@/types';
 import type { Obligation, ObligationKind } from '@/types';
@@ -45,7 +50,7 @@ export function ObligationPage({ kind, icon: Icon, description }: ObligationPage
   const isLoan = kind === 'loan';
   const isDistribution = !!meta.pctField;
 
-  const { selectedYear } = useYear();
+  const { selectedYear, selectedYearId } = useYear();
   const { formatCurrency: fmt, currency } = useCurrency();
   const [obligations, setObligations] = useState<Obligation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +76,7 @@ export function ObligationPage({ kind, icon: Icon, description }: ObligationPage
     const intPct = parseFloat(form.interest_pct) || 0;
     await createObligation({
       kind,
+      year_id: selectedYearId ?? '',
       description: form.description,
       frequency: form.frequency,
       default_amount: amt,
@@ -238,7 +244,10 @@ export function ObligationPage({ kind, icon: Icon, description }: ObligationPage
               key={o.id}
               obligation={o}
               isSavings={isSavings}
-              onUpdated={reload}              fmt={fmt}            />
+              onUpdated={reload}
+              onDeleted={reload}
+              fmt={fmt}
+            />
           ))}
         </div>
       )}
@@ -275,11 +284,12 @@ function KpiCard({ label, value, accent }: { label: string; value: string; accen
 }
 
 function ObligationGrid({
-  obligation, isSavings, onUpdated, fmt,
+  obligation, isSavings, onUpdated, onDeleted, fmt,
 }: {
   obligation: Obligation;
   isSavings: boolean;
   onUpdated: () => void;
+  onDeleted: () => void;
   fmt: (n: number) => string;
 }) {
   const [editingMonth, setEditingMonth] = useState<number | null>(null);
@@ -294,9 +304,12 @@ function ObligationGrid({
   const saveActual = async () => {
     if (editingMonth == null) return;
     const value = parseFloat(actualDraft) || 0;
-    await updateObligationEntry(obligation.id, editingMonth, {
+    const existingEntry = obligation.entries.find((e) => e.month === editingMonth);
+    const plannedFallback = existingEntry?.planned_amount ?? obligation.default_amount ?? 0;
+    await updateObligationEntry(obligation.id, obligation.year_id, editingMonth, {
       actual_amount: value,
       paid: value > 0,
+      planned_amount: plannedFallback,
     });
     setEditingMonth(null);
     onUpdated();
@@ -304,9 +317,15 @@ function ObligationGrid({
   };
 
   const toggleTransferred = async (month: number, currently: boolean) => {
-    await markSavingsTransferred(obligation.id, month, !currently);
+    await markSavingsTransferred(obligation.id, obligation.year_id, month, !currently);
     onUpdated();
     toast.success(!currently ? 'Marked transferred to bank' : 'Removed transfer flag');
+  };
+
+  const handleDelete = async () => {
+    await deleteObligation(obligation.id);
+    toast.success(`"${obligation.description}" deleted`);
+    onDeleted();
   };
 
   return (
@@ -314,9 +333,40 @@ function ObligationGrid({
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-sm font-semibold">{obligation.description}</CardTitle>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary" className="text-[10px]">{obligation.frequency}</Badge>
-            {obligation.remarks && <span className="truncate">· {obligation.remarks}</span>}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="secondary" className="text-[10px]">{obligation.frequency}</Badge>
+              {obligation.remarks && <span className="truncate">· {obligation.remarks}</span>}
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  title="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete "{obligation.description}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this record and all its monthly entries. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </CardHeader>
@@ -334,7 +384,7 @@ function ObligationGrid({
           <TableBody>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
               const e = obligation.entries.find((x) => x.month === m);
-              const planned = e?.planned_amount ?? 0;
+              const planned = e?.planned_amount ?? obligation.default_amount ?? 0;
               const actual = e?.actual_amount ?? 0;
               const paid = e?.paid ?? false;
               const transferred = !!e?.transferred_to_bank;

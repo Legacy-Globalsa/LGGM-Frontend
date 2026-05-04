@@ -15,18 +15,19 @@ import { useCurrency } from '@/hooks/useCurrency';
 const COLORS = ['#8b5cf6', '#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#a855f7'];
 
 export default function Reports() {
-  const { selectedYear } = useYear();
+  const { selectedYear, selectedYearId } = useYear();
   const { formatCurrency: fmt } = useCurrency();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!selectedYearId) return;
     setLoading(true);
-    Promise.all([fetchTransactions(selectedYear), fetchBudgets(selectedYear)]).then(([t, b]) => {
+    Promise.all([fetchTransactions(selectedYearId), fetchBudgets(selectedYearId)]).then(([t, b]) => {
       setTransactions(t); setBudgets(b); setLoading(false);
     });
-  }, [selectedYear]);
+  }, [selectedYearId]);
 
   const totals = useMemo(() => {
     const income = budgets.reduce((s, b) => s + b.income_amount, 0);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   TrendingUp, TrendingDown, Wallet, WalletCards,
-  HandCoins, Sparkles, Heart, AlertTriangle, ArrowRight,
+  HandCoins, Sparkles, Heart, AlertTriangle, ArrowRight, Calendar,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +15,7 @@ import {
   AreaChart, Area, Legend,
 } from 'recharts';
 import { fetchDashboardSummary } from '@/lib/api';
-import { getStatusColor, getStatusLabel } from '@/mocks/mockObligations';
+import { getStatusColor, getStatusLabel } from '@/lib/utils';
 import { useYear } from '@/hooks/useYear';
 import { useCurrency } from '@/hooks/useCurrency';
 import type { DashboardSummary, PlannedActualPair } from '@/types';
@@ -25,17 +25,21 @@ const pct = (pair: PlannedActualPair) =>
   pair.planned > 0 ? Math.round((pair.actual / pair.planned) * 100) : 0;
 
 export default function Dashboard() {
-  const { selectedYear } = useYear();
+  const { selectedYear, availableYears, loading: yearLoading } = useYear();
   const { formatCurrency: fmt } = useCurrency();
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (yearLoading) return;
+    if (availableYears.length === 0) { setLoading(false); return; }
     setLoading(true);
-    fetchDashboardSummary(selectedYear).then((d) => { setData(d); setLoading(false); });
-  }, [selectedYear]);
+    fetchDashboardSummary(selectedYear)
+      .then((d) => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [selectedYear, availableYears, yearLoading]);
 
-  if (loading || !data) {
+  if (loading || yearLoading) {
     return (
       <div className="space-y-6">
         <div><Skeleton className="h-8 w-48" /></div>
@@ -45,6 +49,21 @@ export default function Dashboard() {
           ))}
         </div>
         <Skeleton className="h-80 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (!data || availableYears.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+        <Calendar className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">No year set up yet</h2>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          Go to <strong>Settings</strong> to create your first financial year before using the dashboard.
+        </p>
+        <a href="/settings" className="inline-flex items-center gap-2 text-sm font-medium text-violet-600 hover:underline">
+          Go to Settings <ArrowRight className="h-4 w-4" />
+        </a>
       </div>
     );
   }
