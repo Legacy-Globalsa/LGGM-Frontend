@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Trash2, ArrowUpCircle, ArrowDownCircle, Link2 } from 'lucide-react';
+import { Plus, Search, Trash2, Pencil, ArrowUpCircle, ArrowDownCircle, Link2, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,16 +18,19 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  fetchTransactions, fetchCategories, seedDefaultCategories, createTransaction, deleteTransaction,
-  fetchTransactionAggregates,
+  fetchTransactions, fetchCategories, seedDefaultCategories, createTransaction, updateTransaction,
+  deleteTransaction, fetchTransactionAggregates, fetchMoneyAccounts,
 } from '@/lib/api';
 import type {
-  Transaction, Category, TransactionType, TransactionMonthAggregate,
+  Transaction, Category, TransactionType, TransactionMonthAggregate, MoneyAccount,
 } from '@/types';
 import { MONTHS } from '@/types';
 import { useYear } from '@/hooks/useYear';
 import { useCurrency } from '@/hooks/useCurrency';
 import { cn } from '@/lib/utils';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export default function Transactions() {
   const { selectedYear, selectedYearId } = useYear();
@@ -40,11 +43,17 @@ export default function Transactions() {
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [filterMonth, setFilterMonth] = useState<'all' | string>('all');
 
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({
-    description: '', type: 'expense' as TransactionType,
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<{
+    description: string; type: TransactionType; category_id: string;
+    amount: string; notes: string; transaction_date: string; money_account_id: string;
+  }>({
+    description: '', type: 'expense',
     category_id: '', amount: '', notes: '',
     transaction_date: format(new Date(), 'yyyy-MM-dd'),
+    money_account_id: '',
   });
 
   useEffect(() => {
@@ -54,10 +63,11 @@ export default function Transactions() {
       fetchTransactions(selectedYearId, filterMonth === 'all' ? undefined : Number(filterMonth)),
       fetchCategories(),
       fetchTransactionAggregates(selectedYearId),
-    ]).then(async ([t, c, agg]) => {
+      fetchMoneyAccounts(),
+    ]).then(async ([t, c, agg, accts]) => {
       // Auto-seed default categories for new users
       const cats = c.length === 0 ? await seedDefaultCategories() : c;
-      setTransactions(t); setCategories(cats); setAggregates(agg);
+      setTransactions(t); setCategories(cats); setAggregates(agg); setMoneyAccounts(accts);
       setLoading(false);
     });
   }, [selectedYearId, filterMonth]);
@@ -70,28 +80,59 @@ export default function Transactions() {
     ]).then(([t, agg]) => { setTransactions(t); setAggregates(agg); });
   };
 
-  const handleAdd = async () => {
+  const resetForm = () => {
+    setForm({
+      description: '', type: 'expense', category_id: '',
+      amount: '', notes: '', transaction_date: format(new Date(), 'yyyy-MM-dd'),
+      money_account_id: '',
+    });
+    setEditingId(null);
+  };
+
+  const handleSave = async () => {
     const amount = parseFloat(form.amount);
     if (!form.description || !form.category_id || !amount) {
       toast.error('Description, category and amount are required.');
       return;
     }
+    if (!form.money_account_id) {
+      toast.error('Please select an account.');
+      return;
+    }
     const month = new Date(form.transaction_date).getMonth() + 1;
     const category = categories.find((c) => c.id === form.category_id);
-    await createTransaction({
+    const payload = {
       ...form,
       amount,
       month,
       year_id: selectedYearId ?? '',
       category_name: category?.name,
-    });
+      money_account_id: form.money_account_id || null,
+    };
+    if (editingId) {
+      await updateTransaction(editingId, payload);
+      toast.success('Transaction updated');
+    } else {
+      await createTransaction(payload);
+      toast.success('Transaction added');
+    }
     await reload();
     setDialogOpen(false);
+    resetForm();
+  };
+
+  const handleStartEdit = (t: Transaction) => {
+    setEditingId(t.id);
     setForm({
-      description: '', type: 'expense', category_id: '',
-      amount: '', notes: '', transaction_date: format(new Date(), 'yyyy-MM-dd'),
+      description: t.description,
+      type: t.type,
+      category_id: t.category_id,
+      amount: String(t.amount),
+      notes: t.notes ?? '',
+      transaction_date: t.transaction_date,
+      money_account_id: t.money_account_id ?? '',
     });
-    toast.success('Transaction added');
+    setDialogOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -117,14 +158,14 @@ export default function Transactions() {
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Transactions</h1>
           <p className="text-sm text-muted-foreground">All income and expenses for {selectedYear}</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">
               <Plus className="mr-2 h-4 w-4" /> Add Transaction
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>New Transaction</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editingId ? 'Edit Transaction' : 'New Transaction'}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -171,10 +212,38 @@ export default function Transactions() {
                 <Label>Notes</Label>
                 <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label>Account</Label>
+                  <TooltipProvider delay={100}>
+                    <Tooltip>
+                      <TooltipTrigger render={<span className="inline-flex cursor-help" />}>
+                        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-56 text-xs">
+                        You must first create a money account on the{' '}
+                        <strong>Money Accounts</strong> page before you can select one here.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Select value={form.money_account_id as string} onValueChange={(v) => setForm({ ...form, money_account_id: v })}>
+                  <SelectTrigger>
+                    <span className={cn('truncate text-sm', !form.money_account_id && 'text-muted-foreground')}>
+                      {moneyAccounts.find((a) => a.id === form.money_account_id)?.name ?? 'Select account'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {moneyAccounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleAdd} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
+              <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm(); }}>Cancel</Button>
+              <Button onClick={handleSave} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -274,9 +343,10 @@ export default function Transactions() {
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Account</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="w-15"></TableHead>
+                  <TableHead className="w-20"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -285,6 +355,7 @@ export default function Transactions() {
                     <TableCell>{format(new Date(t.transaction_date), 'MMM d')}</TableCell>
                     <TableCell className="font-medium">{t.description}</TableCell>
                     <TableCell className="text-muted-foreground">{t.category_name ?? '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">{t.money_account_name ?? '—'}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={cn('text-[10px]',
                         t.type === 'income' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600')}>
@@ -296,9 +367,14 @@ export default function Transactions() {
                       {t.type === 'income' ? '+' : '−'}{fmt(t.amount)}
                     </TableCell>
                     <TableCell>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(t.id)} className="h-7 w-7">
-                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => handleStartEdit(t)} className="h-7 w-7">
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => handleDelete(t.id)} className="h-7 w-7">
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

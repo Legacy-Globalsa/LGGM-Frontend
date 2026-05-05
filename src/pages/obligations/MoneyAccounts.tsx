@@ -29,7 +29,7 @@ import { useYear } from '@/hooks/useYear';
 import { useCurrency } from '@/hooks/useCurrency';
 import {
   fetchObligations, updateObligationEntry, markSavingsTransferred,
-  fetchMoneyAccounts, createMoneyAccount, deleteMoneyAccount,
+  fetchMoneyAccounts, createMoneyAccount, updateMoneyAccount, deleteMoneyAccount,
   createObligation, deleteObligation,
 } from '@/lib/api';
 import { MONTH_SHORT, MONEY_ACCOUNT_TYPE_META } from '@/types';
@@ -56,6 +56,17 @@ export default function MoneyAccountsPage() {
   // Add account dialog
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({
+    name: '',
+    type: 'bank_account' as MoneyAccountType,
+    account_identifier: '',
+    balance: '',
+    notes: '',
+  });
+
+  // Edit account dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<MoneyAccount | null>(null);
+  const [editForm, setEditForm] = useState({
     name: '',
     type: 'bank_account' as MoneyAccountType,
     account_identifier: '',
@@ -114,6 +125,34 @@ export default function MoneyAccountsPage() {
     toast.success('Account added');
     setAddOpen(false);
     setForm({ name: '', type: 'bank_account', account_identifier: '', balance: '', notes: '' });
+  };
+
+  const handleStartEdit = (acc: MoneyAccount) => {
+    setEditingAccount(acc);
+    setEditForm({
+      name: acc.name,
+      type: acc.type,
+      account_identifier: acc.account_identifier ?? '',
+      balance: String(acc.balance),
+      notes: acc.notes ?? '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditAccount = async () => {
+    if (!editingAccount) return;
+    if (!editForm.name.trim()) { toast.error('Account name is required.'); return; }
+    await updateMoneyAccount(editingAccount.id, {
+      name: editForm.name.trim(),
+      type: editForm.type,
+      account_identifier: editForm.account_identifier,
+      balance: parseFloat(editForm.balance) || 0,
+      notes: editForm.notes,
+    });
+    await reload();
+    toast.success('Account updated');
+    setEditOpen(false);
+    setEditingAccount(null);
   };
 
   const handleDeleteAccount = async (id: string) => {
@@ -276,16 +315,25 @@ export default function MoneyAccountsPage() {
                             <p className="text-[10px] font-normal text-muted-foreground">{meta.label}</p>
                           </div>
                         </span>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-                              title="Remove account"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </AlertDialogTrigger>
+                        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            title="Edit account"
+                            onClick={() => handleStartEdit(acc)}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost" size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                title="Remove account"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>Remove "{acc.name || acc.type}"?</AlertDialogTitle>
@@ -303,8 +351,7 @@ export default function MoneyAccountsPage() {
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
-                        </AlertDialog>
-                      </CardTitle>
+                        </AlertDialog>                        </div>                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div>
@@ -407,6 +454,64 @@ export default function MoneyAccountsPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Edit Account Dialog */}
+      <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setEditingAccount(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Account</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Account Name</Label>
+              <Input
+                placeholder="e.g. Al Rajhi Bank, GCash"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Account Type</Label>
+                <Select value={editForm.type} onValueChange={(v) => v && setEditForm({ ...editForm, type: v as MoneyAccountType })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(MONEY_ACCOUNT_TYPE_META) as [MoneyAccountType, { label: string }][]).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Account ID / Last 4 digits</Label>
+                <Input
+                  placeholder="e.g. ••••4521"
+                  value={editForm.account_identifier}
+                  onChange={(e) => setEditForm({ ...editForm, account_identifier: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Current Balance</Label>
+              <Input
+                type="number" placeholder="0"
+                value={editForm.balance}
+                onChange={(e) => setEditForm({ ...editForm, balance: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Input
+                placeholder="Optional"
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditOpen(false); setEditingAccount(null); }}>Cancel</Button>
+            <Button onClick={handleEditAccount} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
