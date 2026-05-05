@@ -227,7 +227,7 @@ export default function Transactions() {
                     </Tooltip>
                   </TooltipProvider>
                 </div>
-                <Select value={form.money_account_id as string} onValueChange={(v) => setForm({ ...form, money_account_id: v })}>
+                <Select value={String(form.money_account_id)} onValueChange={(v) => setForm({ ...form, money_account_id: v ?? '' })}>
                   <SelectTrigger>
                     <span className={cn('truncate text-sm', !form.money_account_id && 'text-muted-foreground')}>
                       {moneyAccounts.find((a) => a.id === form.money_account_id)?.name ?? 'Select account'}
