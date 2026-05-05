@@ -303,7 +303,7 @@ export default function MoneyAccountsPage() {
                 const meta = MONEY_ACCOUNT_TYPE_META[acc.type];
                 return (
                   <Card key={acc.id} className="group relative overflow-hidden border-border/40 transition-shadow hover:shadow-lg">
-                    <div className="absolute inset-0 bg-linear-to-br from-violet-600/5 to-indigo-600/5 opacity-0 transition-opacity group-hover:opacity-100" />
+                    <div className="absolute inset-0 pointer-events-none bg-linear-to-br from-violet-600/5 to-indigo-600/5 opacity-0 transition-opacity group-hover:opacity-100" />
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center justify-between text-sm">
                         <span className="flex items-center gap-2.5">
