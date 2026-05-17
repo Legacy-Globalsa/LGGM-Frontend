@@ -103,18 +103,25 @@ export async function fetchDashboardSummary(yearNumber: number): Promise<Dashboa
   const year = await fetchYear(yearNumber);
   const budgets = await fetchBudgets(year.id);
 
-  const monthlyData: MonthlyOverview[] = budgets.map((b) => ({
-    month: b.month,
-    monthName: MONTH_NAMES[b.month - 1] ?? '',
-    income: Number(b.income_amount),
-    expenses: Number(b.other_actual),
-    tithes:     { planned: Number(b.tithes_planned),      actual: Number(b.tithes_actual) },
-    offering:   { planned: Number(b.offering_planned),    actual: Number(b.offering_actual) },
-    savings:    { planned: Number(b.savings_planned),     actual: Number(b.savings_actual) },
-    firstFruit: { planned: Number(b.first_fruit_planned), actual: Number(b.first_fruit_actual) },
-    surplus: Number(b.income_amount) - Number(b.other_actual),
-    status: b.status,
-  }));
+  const monthlyData: MonthlyOverview[] = budgets.map((b) => {
+    const income = Number(b.income_amount);
+    const expenses = Number(b.fixed_bills_actual) + Number(b.loans_actual) + Number(b.other_actual);
+    const giving = Number(b.tithes_actual) + Number(b.offering_actual) + Number(b.first_fruit_actual);
+    const savings = Number(b.savings_actual);
+
+    return {
+      month: b.month,
+      monthName: MONTH_NAMES[b.month - 1] ?? '',
+      income,
+      expenses,
+      tithes:     { planned: Number(b.tithes_planned),      actual: Number(b.tithes_actual) },
+      offering:   { planned: Number(b.offering_planned),    actual: Number(b.offering_actual) },
+      savings:    { planned: Number(b.savings_planned),     actual: savings },
+      firstFruit: { planned: Number(b.first_fruit_planned), actual: Number(b.first_fruit_actual) },
+      surplus: income - expenses - giving - savings,
+      status: b.status,
+    };
+  });
 
   const totalIncome   = monthlyData.reduce((s, m) => s + m.income, 0);
   const totalExpenses = monthlyData.reduce((s, m) => s + m.expenses, 0);
@@ -135,6 +142,7 @@ export async function fetchDashboardSummary(yearNumber: number): Promise<Dashboa
     (acc, m) => ({ planned: acc.planned + m.firstFruit.planned, actual: acc.actual + m.firstFruit.actual }),
     { planned: 0, actual: 0 },
   );
+  const surplus = monthlyData.reduce((s, m) => s + m.surplus, 0);
 
   return {
     year: yearNumber,
@@ -144,7 +152,7 @@ export async function fetchDashboardSummary(yearNumber: number): Promise<Dashboa
     offering,
     savings,
     firstFruit,
-    surplus: totalIncome - totalExpenses,
+    surplus,
     monthlyData,
   };
 }
@@ -152,9 +160,10 @@ export async function fetchDashboardSummary(yearNumber: number): Promise<Dashboa
 // ─── Transactions ─────────────────────────────────────────────────────
 // yearId is the UUID from the years table.
 
-export async function fetchTransactions(yearId: string, month?: number): Promise<Transaction[]> {
+export async function fetchTransactions(yearId: string, month?: number, moneyAccountId?: string): Promise<Transaction[]> {
   const params = new URLSearchParams({ year_id: yearId });
   if (month != null) params.set('month', String(month));
+  if (moneyAccountId) params.set('money_account_id', moneyAccountId);
   return apiFetch<Transaction[]>(`/api/transactions?${params}`);
 }
 

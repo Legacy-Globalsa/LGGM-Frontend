@@ -32,6 +32,8 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+const monthFromDateInput = (date: string) => Number(date.slice(5, 7));
+
 export default function Transactions() {
   const { selectedYear, selectedYearId } = useYear();
   const { formatCurrency: fmt, currency } = useCurrency();
@@ -99,7 +101,7 @@ export default function Transactions() {
       toast.error('Please select an account.');
       return;
     }
-    const month = new Date(form.transaction_date).getMonth() + 1;
+    const month = monthFromDateInput(form.transaction_date);
     const category = categories.find((c) => c.id === form.category_id);
     const payload = {
       ...form,

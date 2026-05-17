@@ -29,11 +29,14 @@ import { useYear } from '@/hooks/useYear';
 import { useCurrency } from '@/hooks/useCurrency';
 import {
   fetchObligations, updateObligationEntry, markSavingsTransferred,
-  fetchMoneyAccounts, createMoneyAccount, updateMoneyAccount, deleteMoneyAccount,
-  createObligation, deleteObligation,
+  fetchMoneyAccounts, createMoneyAccount, deleteMoneyAccount,
+  createObligation, deleteObligation, fetchTransactions, fetchCategories,
+  seedDefaultCategories, updateTransaction, deleteTransaction,
 } from '@/lib/api';
 import { MONTH_SHORT, MONEY_ACCOUNT_TYPE_META } from '@/types';
-import type { Obligation, MoneyAccount, MoneyAccountType } from '@/types';
+import type {
+  Obligation, MoneyAccount, MoneyAccountType, Transaction, Category, TransactionType,
+} from '@/types';
 import { cn } from '@/lib/utils';
 
 const accountTypeIcons: Record<MoneyAccountType, typeof Wallet> = {
@@ -43,6 +46,15 @@ const accountTypeIcons: Record<MoneyAccountType, typeof Wallet> = {
   gcash: Smartphone,
   e_wallet: CreditCard,
   other: Banknote,
+};
+
+const monthFromDateInput = (date: string) => Number(date.slice(5, 7));
+
+const formatTransactionDate = (date: string) => {
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const monthLabel = MONTH_SHORT[month - 1];
+  return monthLabel && day ? `${monthLabel} ${day}` : date;
 };
 
 export default function MoneyAccountsPage() {
@@ -63,15 +75,28 @@ export default function MoneyAccountsPage() {
     notes: '',
   });
 
-  // Edit account dialog
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<MoneyAccount | null>(null);
-  const [editForm, setEditForm] = useState({
-    name: '',
-    type: 'bank_account' as MoneyAccountType,
-    account_identifier: '',
-    balance: '',
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [accountTransactions, setAccountTransactions] = useState<Transaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [transactionForm, setTransactionForm] = useState<{
+    description: string;
+    type: TransactionType;
+    category_id: string;
+    amount: string;
+    notes: string;
+    transaction_date: string;
+    money_account_id: string;
+  }>({
+    description: '',
+    type: 'expense',
+    category_id: '',
+    amount: '',
     notes: '',
+    transaction_date: '',
+    money_account_id: '',
   });
   const [savingsOpen, setSavingsOpen] = useState(false);
   const [savingsForm, setSavingsForm] = useState({
@@ -86,21 +111,44 @@ export default function MoneyAccountsPage() {
     Promise.all([
       fetchObligations(selectedYear, 'savings'),
       fetchMoneyAccounts(),
-    ]).then(([obs, accs]) => {
+      fetchCategories(),
+    ]).then(async ([obs, accs, cats]) => {
+      const nextCategories = cats.length === 0 ? await seedDefaultCategories() : cats;
       setObligations(obs);
       setAccounts(accs);
+      setCategories(nextCategories);
       setLoading(false);
     });
   }, [selectedYear]);
 
   const reload = async () => {
-    const [obs, accs] = await Promise.all([
+    const [obs, accs, cats] = await Promise.all([
       fetchObligations(selectedYear, 'savings'),
       fetchMoneyAccounts(),
+      fetchCategories(),
     ]);
+    const nextCategories = cats.length === 0 ? await seedDefaultCategories() : cats;
     setObligations(obs);
     setAccounts(accs);
+    setCategories(nextCategories);
+    if (selectedAccountId && !accs.some((a) => a.id === selectedAccountId)) {
+      setSelectedAccountId(null);
+      setAccountTransactions([]);
+    }
   };
+
+  useEffect(() => {
+    if (!selectedYearId || !selectedAccountId) {
+      setAccountTransactions([]);
+      return;
+    }
+
+    setTransactionsLoading(true);
+    fetchTransactions(selectedYearId, undefined, selectedAccountId)
+      .then(setAccountTransactions)
+      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Failed to load account transactions'))
+      .finally(() => setTransactionsLoading(false));
+  }, [selectedYearId, selectedAccountId]);
 
   const totals = useMemo(() => {
     let planned = 0, recorded = 0, transferredActual = 0;
@@ -112,6 +160,18 @@ export default function MoneyAccountsPage() {
     const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
     return { planned, recorded, transferredActual, totalBalance };
   }, [obligations, accounts]);
+
+  const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? null;
+  const transactionTotals = useMemo(() => {
+    const income = accountTransactions
+      .filter((t) => t.type === 'income')
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const expenses = accountTransactions
+      .filter((t) => t.type === 'expense')
+      .reduce((s, t) => s + Number(t.amount), 0);
+    return { income, expenses, net: income - expenses };
+  }, [accountTransactions]);
+  const filteredCategories = categories.filter((c) => c.type === transactionForm.type);
 
   const handleAddAccount = async () => {
     await createMoneyAccount({
@@ -127,32 +187,76 @@ export default function MoneyAccountsPage() {
     setForm({ name: '', type: 'bank_account', account_identifier: '', balance: '', notes: '' });
   };
 
-  const handleStartEdit = (acc: MoneyAccount) => {
-    setEditingAccount(acc);
-    setEditForm({
-      name: acc.name,
-      type: acc.type,
-      account_identifier: acc.account_identifier ?? '',
-      balance: String(acc.balance),
-      notes: acc.notes ?? '',
-    });
-    setEditOpen(true);
+  const reloadAccountTransactions = async (accountId = selectedAccountId) => {
+    if (!selectedYearId || !accountId) return;
+    setTransactionsLoading(true);
+    try {
+      const txns = await fetchTransactions(selectedYearId, undefined, accountId);
+      setAccountTransactions(txns);
+    } finally {
+      setTransactionsLoading(false);
+    }
   };
 
-  const handleEditAccount = async () => {
-    if (!editingAccount) return;
-    if (!editForm.name.trim()) { toast.error('Account name is required.'); return; }
-    await updateMoneyAccount(editingAccount.id, {
-      name: editForm.name.trim(),
-      type: editForm.type,
-      account_identifier: editForm.account_identifier,
-      balance: parseFloat(editForm.balance) || 0,
-      notes: editForm.notes,
+  const resetTransactionForm = () => {
+    setEditingTransactionId(null);
+    setTransactionForm({
+      description: '',
+      type: 'expense',
+      category_id: '',
+      amount: '',
+      notes: '',
+      transaction_date: '',
+      money_account_id: selectedAccountId ?? '',
     });
-    await reload();
-    toast.success('Account updated');
-    setEditOpen(false);
-    setEditingAccount(null);
+  };
+
+  const handleStartTransactionEdit = (transaction: Transaction) => {
+    setEditingTransactionId(transaction.id);
+    setTransactionForm({
+      description: transaction.description,
+      type: transaction.type,
+      category_id: transaction.category_id,
+      amount: String(transaction.amount),
+      notes: transaction.notes ?? '',
+      transaction_date: transaction.transaction_date,
+      money_account_id: transaction.money_account_id ?? selectedAccountId ?? '',
+    });
+    setTransactionDialogOpen(true);
+  };
+
+  const handleSaveTransaction = async () => {
+    if (!editingTransactionId || !selectedYearId) return;
+    const amount = parseFloat(transactionForm.amount);
+    if (!transactionForm.description.trim() || !transactionForm.category_id || !amount) {
+      toast.error('Description, category and amount are required.');
+      return;
+    }
+    if (!transactionForm.money_account_id) {
+      toast.error('Please select an account.');
+      return;
+    }
+
+    const category = categories.find((c) => c.id === transactionForm.category_id);
+    await updateTransaction(editingTransactionId, {
+      ...transactionForm,
+      description: transactionForm.description.trim(),
+      amount,
+      month: monthFromDateInput(transactionForm.transaction_date),
+      year_id: selectedYearId,
+      category_name: category?.name,
+      money_account_id: transactionForm.money_account_id,
+    });
+    await reloadAccountTransactions();
+    toast.success('Transaction updated');
+    setTransactionDialogOpen(false);
+    resetTransactionForm();
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    await deleteTransaction(id);
+    await reloadAccountTransactions();
+    toast.success('Transaction deleted');
   };
 
   const handleDeleteAccount = async (id: string) => {
@@ -302,7 +406,22 @@ export default function MoneyAccountsPage() {
                 const IconComp = accountTypeIcons[acc.type];
                 const meta = MONEY_ACCOUNT_TYPE_META[acc.type];
                 return (
-                  <Card key={acc.id} className="group relative overflow-hidden border-border/40 transition-shadow hover:shadow-lg">
+                  <Card
+                    key={acc.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedAccountId(acc.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedAccountId(acc.id);
+                      }
+                    }}
+                    className={cn(
+                      'group relative cursor-pointer overflow-hidden border-border/40 transition-shadow hover:shadow-lg',
+                      selectedAccountId === acc.id && 'ring-2 ring-violet-500/60',
+                    )}
+                  >
                     <div className="absolute inset-0 pointer-events-none bg-linear-to-br from-violet-600/5 to-indigo-600/5 opacity-0 transition-opacity group-hover:opacity-100" />
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center justify-between text-sm">
@@ -316,42 +435,37 @@ export default function MoneyAccountsPage() {
                           </div>
                         </span>
                         <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <Button
-                            variant="ghost" size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                            title="Edit account"
-                            onClick={() => handleStartEdit(acc)}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="ghost" size="icon"
                                 className="h-7 w-7 text-muted-foreground hover:text-destructive"
                                 title="Remove account"
+                                onClick={(event) => event.stopPropagation()}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Remove "{acc.name || acc.type}"?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will deactivate the account. Existing savings entries linked to it will not be affected.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteAccount(acc.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Remove
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>                        </div>                      </CardTitle>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remove "{acc.name || acc.type}"?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will deactivate the account. Existing savings entries linked to it will not be affected.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteAccount(acc.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Remove
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div>
@@ -370,6 +484,18 @@ export default function MoneyAccountsPage() {
                 );
               })}
             </div>
+          )}
+
+          {selectedAccount && (
+            <AccountTransactionsPanel
+              account={selectedAccount}
+              transactions={accountTransactions}
+              loading={transactionsLoading}
+              totals={transactionTotals}
+              fmt={fmt}
+              onEdit={handleStartTransactionEdit}
+              onDelete={handleDeleteTransaction}
+            />
           )}
         </TabsContent>
 
@@ -455,60 +581,79 @@ export default function MoneyAccountsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Edit Account Dialog */}
-      <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setEditingAccount(null); }}>
+      <Dialog open={transactionDialogOpen} onOpenChange={(open) => { setTransactionDialogOpen(open); if (!open) resetTransactionForm(); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Account</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit Transaction</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label>Account Name</Label>
+              <Label>Description</Label>
               <Input
-                placeholder="e.g. Al Rajhi Bank, GCash"
-                value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                value={transactionForm.description}
+                onChange={(e) => setTransactionForm({ ...transactionForm, description: e.target.value })}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Account Type</Label>
-                <Select value={editForm.type} onValueChange={(v) => v && setEditForm({ ...editForm, type: v as MoneyAccountType })}>
+                <Label>Type</Label>
+                <Select
+                  value={transactionForm.type}
+                  onValueChange={(v) => setTransactionForm({ ...transactionForm, type: v as TransactionType, category_id: '' })}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {(Object.entries(MONEY_ACCOUNT_TYPE_META) as [MoneyAccountType, { label: string }][]).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                    <SelectItem value="income">Income</SelectItem>
+                    <SelectItem value="expense">Expense</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Input
+                  placeholder="e.g. ••••4521"
+                  type="date"
+                  value={transactionForm.transaction_date}
+                  onChange={(e) => setTransactionForm({ ...transactionForm, transaction_date: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={transactionForm.category_id} onValueChange={(v) => v && setTransactionForm({ ...transactionForm, category_id: v })}>
+                  <SelectTrigger>
+                    <span className={cn('truncate text-sm', !transactionForm.category_id && 'text-muted-foreground')}>
+                      {filteredCategories.find((category) => category.id === transactionForm.category_id)?.name ?? 'Select category'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredCategories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Account ID / Last 4 digits</Label>
+                <Label>Amount ({currency})</Label>
                 <Input
-                  placeholder="e.g. ••••4521"
-                  value={editForm.account_identifier}
-                  onChange={(e) => setEditForm({ ...editForm, account_identifier: e.target.value })}
+                  type="number"
+                  placeholder="0"
+                  value={transactionForm.amount}
+                  onChange={(e) => setTransactionForm({ ...transactionForm, amount: e.target.value })}
                 />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Current Balance</Label>
-              <Input
-                type="number" placeholder="0"
-                value={editForm.balance}
-                onChange={(e) => setEditForm({ ...editForm, balance: e.target.value })}
-              />
             </div>
             <div className="space-y-2">
               <Label>Notes</Label>
               <Input
                 placeholder="Optional"
-                value={editForm.notes}
-                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                value={transactionForm.notes}
+                onChange={(e) => setTransactionForm({ ...transactionForm, notes: e.target.value })}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditOpen(false); setEditingAccount(null); }}>Cancel</Button>
-            <Button onClick={handleEditAccount} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
+            <Button variant="outline" onClick={() => { setTransactionDialogOpen(false); resetTransactionForm(); }}>Cancel</Button>
+            <Button onClick={handleSaveTransaction} className="bg-linear-to-r from-violet-600 to-indigo-600 text-white">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -517,6 +662,135 @@ export default function MoneyAccountsPage() {
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────
+
+function AccountTransactionsPanel({
+  account, transactions, loading, totals, fmt, onEdit, onDelete,
+}: {
+  account: MoneyAccount;
+  transactions: Transaction[];
+  loading: boolean;
+  totals: { income: number; expenses: number; net: number };
+  fmt: (n: number) => string;
+  onEdit: (transaction: Transaction) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <Card className="border-border/40">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-col gap-1 text-base sm:flex-row sm:items-center sm:justify-between">
+          <span>{account.name} Transactions</span>
+          <Badge variant="secondary" className="w-fit text-[10px]">
+            {transactions.length} related
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-border/40 p-3">
+            <p className="text-xs text-muted-foreground">Income</p>
+            <p className="font-semibold text-emerald-600 dark:text-emerald-400">{fmt(totals.income)}</p>
+          </div>
+          <div className="rounded-md border border-border/40 p-3">
+            <p className="text-xs text-muted-foreground">Expenses</p>
+            <p className="font-semibold text-rose-600 dark:text-rose-400">{fmt(totals.expenses)}</p>
+          </div>
+          <div className="rounded-md border border-border/40 p-3">
+            <p className="text-xs text-muted-foreground">Net</p>
+            <p className={cn('font-semibold', totals.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+              {fmt(totals.net)}
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-md border border-border/40">
+          {loading ? (
+            <div className="space-y-2 p-4">
+              <Skeleton className="h-8" />
+              <Skeleton className="h-8" />
+              <Skeleton className="h-8" />
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No transactions are linked to this account for the selected year.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="w-20"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((transaction) => (
+                  <TableRow key={transaction.id}>
+                    <TableCell>{formatTransactionDate(transaction.transaction_date)}</TableCell>
+                    <TableCell className="font-medium">{transaction.description}</TableCell>
+                    <TableCell className="text-muted-foreground">{transaction.category_name ?? '-'}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          'text-[10px]',
+                          transaction.type === 'income'
+                            ? 'bg-emerald-500/10 text-emerald-600'
+                            : 'bg-rose-500/10 text-rose-600',
+                        )}
+                      >
+                        {transaction.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className={cn(
+                      'text-right font-semibold',
+                      transaction.type === 'income' ? 'text-emerald-600' : 'text-rose-600',
+                    )}>
+                      {transaction.type === 'income' ? '+' : '-'}{fmt(transaction.amount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => onEdit(transaction)} className="h-7 w-7" title="Edit transaction">
+                          <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" title="Delete transaction">
+                              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete "{transaction.description}"?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete the transaction.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => onDelete(transaction.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function KpiCard({ label, value, accent }: { label: string; value: string; accent?: 'emerald' | 'amber' }) {
   const text = accent === 'emerald'
