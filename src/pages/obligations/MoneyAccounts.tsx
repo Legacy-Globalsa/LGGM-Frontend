@@ -187,12 +187,20 @@ export default function MoneyAccountsPage() {
     setForm({ name: '', type: 'bank_account', account_identifier: '', balance: '', notes: '' });
   };
 
-  const reloadAccountTransactions = async (accountId = selectedAccountId) => {
+  const reloadSelectedAccountActivity = async (accountId = selectedAccountId) => {
     if (!selectedYearId || !accountId) return;
     setTransactionsLoading(true);
     try {
-      const txns = await fetchTransactions(selectedYearId, undefined, accountId);
+      const [txns, accs] = await Promise.all([
+        fetchTransactions(selectedYearId, undefined, accountId),
+        fetchMoneyAccounts(),
+      ]);
       setAccountTransactions(txns);
+      setAccounts(accs);
+      if (!accs.some((a) => a.id === accountId)) {
+        setSelectedAccountId(null);
+        setAccountTransactions([]);
+      }
     } finally {
       setTransactionsLoading(false);
     }
@@ -247,7 +255,7 @@ export default function MoneyAccountsPage() {
       category_name: category?.name,
       money_account_id: transactionForm.money_account_id,
     });
-    await reloadAccountTransactions();
+    await reloadSelectedAccountActivity();
     toast.success('Transaction updated');
     setTransactionDialogOpen(false);
     resetTransactionForm();
@@ -255,7 +263,7 @@ export default function MoneyAccountsPage() {
 
   const handleDeleteTransaction = async (id: string) => {
     await deleteTransaction(id);
-    await reloadAccountTransactions();
+    await reloadSelectedAccountActivity();
     toast.success('Transaction deleted');
   };
 
